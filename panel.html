@@ -1,0 +1,115 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>API Mocker Panel</title>
+  <link rel="stylesheet" href="panel.css">
+</head>
+<body>
+  <div class="root">
+
+    <!-- ── Disabled overlay ──────────────────────────────── -->
+    <div id="disabledOverlay" class="disabled-overlay hidden">
+      <div class="disabled-box">
+        <div class="disabled-icon">⚡</div>
+        <div class="disabled-title">API Mocker is off for this site</div>
+        <div class="disabled-domain" id="overlayDomain"></div>
+        <button id="overlayEnableBtn" class="disabled-enable-btn">Enable for this site</button>
+      </div>
+    </div>
+
+    <!-- ── Toolbar ─────────────────────────────────────────── -->
+    <div class="toolbar">
+      <div class="tabs">
+        <button class="tab active" data-tab="calls">
+          Calls <span id="callCount" class="badge">0</span>
+        </button>
+        <button class="tab" data-tab="mocks">
+          Mocks <span id="mockCount" class="badge">0</span>
+        </button>
+      </div>
+      <div class="toolbar-right">
+        <input id="filterInput" type="search" placeholder="filter by url…" />
+        <button id="clearBtn">Clear</button>
+      </div>
+    </div>
+
+    <!-- ── Calls view ─────────────────────────────────────── -->
+    <div id="callsView" class="view">
+      <div class="workspace">
+
+        <!-- Left: call list (resizable) -->
+        <div class="call-list-col" id="callListCol">
+          <div id="callList" class="call-list"></div>
+        </div>
+
+        <!-- Drag handle -->
+        <div class="resize-handle" id="resizeHandle"></div>
+
+        <!-- Right: detail pane -->
+        <div class="detail-pane" id="detailPane">
+          <div id="detailEmpty" class="detail-empty">
+            Select a call on the left to inspect or mock it.
+          </div>
+
+          <div id="detailContent" class="detail-content hidden">
+            <!-- Header -->
+            <div class="detail-header" id="detailHeader"></div>
+
+            <!-- Body: two columns -->
+            <div class="detail-body">
+
+              <!-- Response body tree -->
+              <div class="body-col" id="respCol">
+                <div class="col-toolbar">
+                  <span class="col-title">Response Body</span>
+                  <div class="col-toolbar-right">
+                    <button class="tiny-btn" id="expandAllBtn">Expand all</button>
+                    <button class="tiny-btn" id="collapseAllBtn">Collapse all</button>
+                  </div>
+                </div>
+                <div class="tree-wrap" id="jsonTree"></div>
+              </div>
+
+              <div class="body-divider"></div>
+
+              <!-- Mock editor -->
+              <div class="body-col" id="mockCol">
+                <div class="col-toolbar">
+                  <span class="col-title" id="mockColTitle">Create Mock</span>
+                  <div class="col-toolbar-right">
+                    <label class="status-label">
+                      Status
+                      <input type="number" id="mockStatus" value="200" min="100" max="599" />
+                    </label>
+                    <button class="tiny-btn" id="resetOrigBtn" title="Reset editor to actual response body">↩ Original</button>
+                    <button class="tiny-btn" id="fmtBtn" title="Format JSON (Ctrl+Shift+F)">{ }</button>
+                  </div>
+                </div>
+
+                <div class="editor-wrap" id="editorWrap">
+                  <pre class="editor-hl" id="editorHL" aria-hidden="true"></pre>
+                  <textarea id="mockBody" class="editor-input" spellcheck="false" autocomplete="off"></textarea>
+                </div>
+
+                <div id="jsonError" class="json-error hidden">⚠ Invalid JSON — saved as plain text</div>
+
+                <div class="mock-actions" id="mockActions"></div>
+              </div>
+
+            </div><!-- /detail-body -->
+          </div><!-- /detailContent -->
+        </div><!-- /detail-pane -->
+
+      </div><!-- /workspace -->
+    </div><!-- /callsView -->
+
+    <!-- ── Mocks view ─────────────────────────────────────── -->
+    <div id="mocksView" class="view hidden">
+      <div id="mockList" class="mock-list"></div>
+    </div>
+
+  </div><!-- /root -->
+  <script src="panel.js"></script>
+</body>
+</html>

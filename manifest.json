@@ -1,0 +1,38 @@
+{
+  "manifest_version": 3,
+  "name": "API Mocker (Frontend Unblock)",
+  "version": "1.0.0",
+  "description": "Intercept fetch/XHR on the active tab, view request/response JSON, and serve mock responses without backend changes.",
+  "permissions": ["storage", "scripting", "webNavigation", "tabs"],
+  "host_permissions": ["http://*/*", "https://*/*"],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_title": "API Mocker",
+    "default_popup": "popup.html"
+  },
+  "devtools_page": "devtools.html",
+  "content_scripts": [
+    {
+      "matches": ["http://*/*", "https://*/*"],
+      "js": ["inject-main.js"],
+      "run_at": "document_start",
+      "world": "MAIN",
+      "all_frames": false
+    },
+    {
+      "matches": ["http://*/*", "https://*/*"],
+      "js": ["content-bridge.js", "floating-ui.js"],
+      "css": ["floating-ui.css"],
+      "run_at": "document_start",
+      "all_frames": false
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["floating-ui.css"],
+      "matches": ["http://*/*", "https://*/*"]
+    }
+  ]
+}

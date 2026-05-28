@@ -1,0 +1,31 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>API Mocker</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="header">
+    <span class="logo">⚡ API Mocker</span>
+  </div>
+
+  <div class="current-site" id="currentSiteRow">
+    <div class="site-info">
+      <span class="site-label">This site</span>
+      <span class="site-domain" id="currentDomain">—</span>
+    </div>
+    <label class="toggle" id="currentToggleWrap">
+      <input type="checkbox" id="currentToggle">
+      <span class="slider"></span>
+    </label>
+  </div>
+
+  <div id="savedSection" style="display:none">
+    <div class="section-title">Saved Domains</div>
+    <div class="domain-list" id="domainList"></div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

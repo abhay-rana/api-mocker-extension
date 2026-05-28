@@ -1,0 +1,72 @@
+*, *::before, *::after { box-sizing: border-box; }
+body {
+  margin: 0; width: 280px;
+  font: 13px/1.4 -apple-system, "Segoe UI", Roboto, sans-serif;
+  color: #111827; background: #fff;
+}
+
+.header {
+  display: flex; align-items: center;
+  padding: 12px 14px 10px;
+  border-bottom: 1px solid #e5e7eb;
+}
+.logo { font-size: 14px; font-weight: 700; color: #4f46e5; }
+
+/* ── Current site row ── */
+.current-site {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 12px 14px;
+  border-bottom: 1px solid #f3f4f6;
+}
+.site-info { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.site-label { font-size: 11px; color: #9ca3af; text-transform: uppercase; letter-spacing: .04em; }
+.site-domain {
+  font-size: 13px; font-weight: 500; color: #111827;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 190px;
+}
+.site-domain.unavailable { color: #9ca3af; font-weight: 400; font-size: 12px; }
+
+/* ── Toggle switch ── */
+.toggle { position: relative; display: inline-block; width: 38px; height: 22px; flex-shrink: 0; }
+.toggle input { opacity: 0; width: 0; height: 0; }
+.slider {
+  position: absolute; inset: 0; background: #d1d5db;
+  border-radius: 11px; cursor: pointer; transition: background .2s;
+}
+.slider::before {
+  content: ''; position: absolute;
+  height: 16px; width: 16px; left: 3px; top: 3px;
+  background: #fff; border-radius: 50%;
+  transition: transform .2s;
+  box-shadow: 0 1px 3px rgba(0,0,0,.2);
+}
+.toggle input:checked + .slider { background: #4f46e5; }
+.toggle input:checked + .slider::before { transform: translateX(16px); }
+.toggle input:disabled + .slider { opacity: 0.4; cursor: not-allowed; }
+
+/* ── Saved domains section ── */
+.section-title {
+  padding: 8px 14px 4px;
+  font-size: 11px; color: #9ca3af; text-transform: uppercase; letter-spacing: .04em;
+  border-top: 1px solid #f3f4f6;
+}
+.domain-list { padding: 0 0 6px; }
+
+.domain-row {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 8px 14px; gap: 8px;
+}
+.domain-row:hover { background: #f9fafb; }
+.domain-name {
+  flex: 1; font-size: 12px; color: #374151;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-family: ui-monospace, Consolas, monospace;
+}
+.row-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+
+.del-btn {
+  background: none; border: none; cursor: pointer;
+  color: #d1d5db; font-size: 14px; line-height: 1; padding: 2px 4px;
+  border-radius: 4px;
+}
+.del-btn:hover { color: #ef4444; background: #fef2f2; }
