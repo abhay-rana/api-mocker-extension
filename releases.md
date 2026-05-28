@@ -22,3 +22,27 @@
 - **Zero footprint when off** — no fetch/XHR patching, no call logging, no floating pill on disabled domains.
 - **Mocks preserved on disable** — disabling pauses interception but keeps all saved rules intact.
 - **DevTools panel** — shows an "Extension is off for this site" overlay with a one-click enable button when the domain is disabled.
+
+---
+
+## v1.1.0 — Copy as cURL ⏳ in progress
+
+**Theme:** One-click copy of any captured API call as a ready-to-run cURL command, at Network DevTools parity.
+
+### Decisions locked (implementation pending)
+
+- **Request headers captured** — `inject-main.js` will capture headers for both fetch (`init.headers`) and XHR (`setRequestHeader` calls) and include them in every CALL payload.
+- **Mocked calls included** — cURL represents the request, not the response. Copy works on mocked calls too.
+- **Button placement** — always-visible 5th column on every call row, pushed to the far right with `space-between`.
+- **Button appearance** — icon + label: `⧉ cURL`.
+- **Copy feedback** — button flashes `✓ Copied` for 1.5s then reverts to `⧉ cURL`.
+- **cURL format** — multiline with `\` continuation (matches Chrome Network DevTools copy format).
+- **Header blocklist** — skip `accept-encoding`, `content-length`, `host`, `connection`, `origin`, `referer`, and all `sec-*` browser-noise headers. Keep everything else (especially `authorization`, `cookie`, `content-type`, `x-*`).
+
+### Files to change
+
+| File | Change |
+|---|---|
+| `inject-main.js` | Add `requestHeaders` field to CALL payload for fetch and XHR |
+| `panel.js` | Add `buildCurl()`, `escShell()`, `HEADER_BLOCKLIST`; add cURL button to each row with copy + flash logic |
+| `panel.css` | Update `.call` grid to 5 columns; add `.curl-btn` and `.curl-btn.copied` styles |
