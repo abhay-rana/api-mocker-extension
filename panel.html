@@ -62,10 +62,13 @@
             <!-- Body: two columns -->
             <div class="detail-body">
 
-              <!-- Response body tree -->
+              <!-- Response/Request body tree -->
               <div class="body-col" id="respCol">
                 <div class="col-toolbar">
-                  <span class="col-title">Response Body</span>
+                  <div class="body-tabs">
+                    <button class="body-tab active" data-body-tab="response">Response Body</button>
+                    <button class="body-tab" data-body-tab="request">Request Body</button>
+                  </div>
                   <div class="col-toolbar-right">
                     <button class="tiny-btn" id="expandAllBtn">Expand all</button>
                     <button class="tiny-btn" id="collapseAllBtn">Collapse all</button>

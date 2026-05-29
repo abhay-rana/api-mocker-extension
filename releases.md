@@ -29,8 +29,6 @@
 
 **Theme:** One-click copy of any captured API call as a ready-to-run cURL command, at Network DevTools parity.
 
-### Decisions locked (implementation pending)
-
 - **Request headers captured** — `inject-main.js` will capture headers for both fetch (`init.headers`) and XHR (`setRequestHeader` calls) and include them in every CALL payload.
 - **Mocked calls included** — cURL represents the request, not the response. Copy works on mocked calls too.
 - **Button placement** — always-visible 5th column on every call row, pushed to the far right with `space-between`.
@@ -39,13 +37,32 @@
 - **cURL format** — multiline with `\` continuation (matches Chrome Network DevTools copy format).
 - **Header blocklist** — skip `accept-encoding`, `content-length`, `host`, `connection`, `origin`, `referer`, and all `sec-*` browser-noise headers. Keep everything else (especially `authorization`, `cookie`, `content-type`, `x-*`).
 
-### Files to change
+---
 
-| File | Change |
-|---|---|
-| `inject-main.js` | Add `requestHeaders` field to CALL payload for fetch and XHR |
-| `panel.js` | Add `buildCurl()`, `escShell()`, `HEADER_BLOCKLIST`; add cURL button to each row with copy + flash logic |
-| `panel.css` | Update `.call` grid to 5 columns; add `.curl-btn` and `.curl-btn.copied` styles |
+## v2.5.0 — Request Payload tab ✅ done
+
+**Theme:** Surface the full request context alongside the response so you never need to open Network DevTools just to see what was sent.
+
+### Feature
+
+- **Response / Request tabs** — the left column (currently titled "Response Body") gains two tabs: **Response** (default, active) and **Request**. Clicking **Request** swaps the JSON tree to show the captured request payload.
+- **Response tab** — identical to today: JSON tree of the response body with Expand all / Collapse all controls.
+- **Request tab** — JSON tree of the request body (POST/PUT/PATCH payloads). For requests with no body (GET, DELETE, etc.) a muted `No request body` placeholder is shown instead of an empty tree.
+- **Tab state is per-selection** — switching to a different call row resets the tab back to Response (same as how the editor resets today).
+- **Request data already captured** — `inject-main.js` sends the request body in the CALL payload; no new capture work needed.
+
+### UI design
+
+```
+┌─ Response Body col ──────────────────────────┐
+│ [Response] [Request]   [Expand all] [Collapse]│  ← tab strip replaces the static title
+├──────────────────────────────────────────────┤
+│  { ... JSON tree ... }                        │
+└──────────────────────────────────────────────┘
+```
+
+- Active tab is underlined / filled, inactive is muted — same visual language as the top-level Calls / Mocks tabs.
+- Tabs sit on the left of the col-toolbar; Expand all / Collapse all stay on the right (hidden when Request tab is active and there is no body).
 
 ---
 

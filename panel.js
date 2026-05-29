@@ -8,6 +8,7 @@ let mocks = {};
 let selectedCall = null;
 let filterText = '';
 let currentPanelDomain = '';
+let activeBodyTab = 'response'; // 'response' | 'request'
 
 // ── Disabled overlay ────────────────────────────────────────────────────────
 const disabledOverlay = document.getElementById('disabledOverlay');
@@ -134,13 +135,24 @@ document.addEventListener('mouseup', () => {
   localStorage.setItem(RESIZE_KEY, callListCol.offsetWidth);
 });
 
-// ── Tabs ───────────────────────────────────────────────────────────────────
+// ── Tabs (top-level: Calls / Mocks) ───────────────────────────────────────
 document.querySelectorAll('.tab').forEach(btn => {
   btn.addEventListener('click', () => {
     document.querySelectorAll('.tab').forEach(b => b.classList.remove('active'));
     document.querySelectorAll('.view').forEach(v => v.classList.add('hidden'));
     btn.classList.add('active');
     document.getElementById(btn.dataset.tab + 'View').classList.remove('hidden');
+  });
+});
+
+// ── Body tabs (Response Body / Request Body) ───────────────────────────────
+document.querySelectorAll('.body-tab').forEach(btn => {
+  btn.addEventListener('click', () => {
+    if (!selectedCall) return;
+    activeBodyTab = btn.dataset.bodyTab;
+    document.querySelectorAll('.body-tab').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    renderActiveTree(selectedCall);
   });
 });
 
@@ -251,6 +263,12 @@ function renderDetail(c) {
   detailEmpty.style.display = 'none';
   detailContent.classList.remove('hidden');
 
+  // Reset body tab to Response on every new call selection
+  activeBodyTab = 'response';
+  document.querySelectorAll('.body-tab').forEach(b => {
+    b.classList.toggle('active', b.dataset.bodyTab === 'response');
+  });
+
   // Header
   const sc = c.status >= 400 ? '#b91c1c' : c.status >= 300 ? '#b45309' : '#047857';
   detailHeader.innerHTML = `
@@ -263,19 +281,39 @@ function renderDetail(c) {
     <span title="${esc(c.url)}">${esc(truncUrl(c.url))}</span>
   `;
 
-  // JSON tree (response body viewer)
-  renderJsonTree(c.responseBody);
-
-  // Expand / collapse all
-  document.getElementById('expandAllBtn').onclick = () => {
-    jsonTree.querySelectorAll('details').forEach(d => d.setAttribute('open', ''));
-  };
-  document.getElementById('collapseAllBtn').onclick = () => {
-    jsonTree.querySelectorAll('details').forEach(d => d.removeAttribute('open'));
-  };
+  renderActiveTree(c);
 
   // Mock editor
   renderMockPanel(c);
+}
+
+function renderActiveTree(c) {
+  const expandAllBtn  = document.getElementById('expandAllBtn');
+  const collapseAllBtn = document.getElementById('collapseAllBtn');
+
+  if (activeBodyTab === 'request') {
+    if (!c.requestBody || !c.requestBody.trim()) {
+      jsonTree.innerHTML = '<span class="empty">No request body</span>';
+      expandAllBtn.style.display  = 'none';
+      collapseAllBtn.style.display = 'none';
+      return;
+    }
+    renderJsonTree(c.requestBody);
+  } else {
+    renderJsonTree(c.responseBody);
+  }
+
+  // Show expand/collapse only when the tree has collapsible nodes (valid JSON)
+  const hasTree = jsonTree.querySelector('details') !== null;
+  expandAllBtn.style.display  = hasTree ? '' : 'none';
+  collapseAllBtn.style.display = hasTree ? '' : 'none';
+
+  expandAllBtn.onclick = () => {
+    jsonTree.querySelectorAll('details').forEach(d => d.setAttribute('open', ''));
+  };
+  collapseAllBtn.onclick = () => {
+    jsonTree.querySelectorAll('details').forEach(d => d.removeAttribute('open'));
+  };
 }
 
 // ── JSON tree ──────────────────────────────────────────────────────────────
