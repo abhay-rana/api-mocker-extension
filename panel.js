@@ -144,9 +144,25 @@ document.querySelectorAll('.tab').forEach(btn => {
   });
 });
 
-document.getElementById('clearBtn').addEventListener('click', () => {
+function clearLog() {
+  calls = [];
+  selectedCall = null;
+  renderCallList();
+  showEmptyDetail();
   port.postMessage({ type: 'CLEAR_LOG' });
+}
+
+document.getElementById('clearBtn').addEventListener('click', clearLog);
+
+document.getElementById('reloadBtn').addEventListener('click', () => {
+  chrome.tabs.reload(tabId);
 });
+
+document.addEventListener('keydown', (e) => {
+  if (e.ctrlKey && e.key === 'l') { e.preventDefault(); clearLog(); }
+  if (e.ctrlKey && e.key === 'r') { e.preventDefault(); chrome.tabs.reload(tabId); }
+});
+
 filterInput.addEventListener('input', () => {
   filterText = filterInput.value.trim().toLowerCase();
   renderCallList();
@@ -201,7 +217,20 @@ function renderCallList() {
       <span class="cs ${sc}">${c.status || '—'}</span>
       <span class="cu" title="${esc(c.url)}">${urlPath(c.url)}</span>
       <span class="ct">${ms}</span>
+      <button class="curl-btn" title="Copy as cURL">⧉ cURL</button>
     `;
+    el.querySelector('.curl-btn').addEventListener('click', (e) => {
+      e.stopPropagation();
+      const btn = e.currentTarget;
+      navigator.clipboard.writeText(buildCurl(c)).then(() => {
+        btn.textContent = '✓ Copied';
+        btn.classList.add('copied');
+        setTimeout(() => {
+          btn.textContent = '⧉ cURL';
+          btn.classList.remove('copied');
+        }, 1500);
+      });
+    });
     el.addEventListener('click', () => {
       selectedCall = c;
       document.querySelectorAll('.call').forEach(e => e.classList.remove('selected'));
@@ -493,6 +522,28 @@ function renderMockList() {
     });
     mockListEl.appendChild(card);
   });
+}
+
+// ── cURL builder ──────────────────────────────────────────────────────────
+const HEADER_BLOCKLIST = new Set([
+  'accept-encoding', 'content-length', 'host', 'connection', 'origin', 'referer',
+]);
+
+function escShell(s) {
+  return "'" + String(s).replace(/'/g, "'\\''") + "'";
+}
+
+function buildCurl(c) {
+  const parts = [`curl -X ${c.method}`];
+  const headers = c.requestHeaders || {};
+  for (const [k, v] of Object.entries(headers)) {
+    const kl = k.toLowerCase();
+    if (HEADER_BLOCKLIST.has(kl) || kl.startsWith('sec-')) continue;
+    parts.push(`  -H ${escShell(`${k}: ${v}`)}`);
+  }
+  if (c.requestBody) parts.push(`  --data ${escShell(c.requestBody)}`);
+  parts.push(`  ${escShell(c.url)}`);
+  return parts.join(' \\\n');
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────

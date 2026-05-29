@@ -61,12 +61,15 @@
       return origFetch(input, init);
     }
 
+    const reqHeaders = collectFetchHeaders(input, init);
+
     const mock = findMock(method, url);
     if (mock) {
       const body = mock.body ?? '';
       const status = mock.status || 200;
       post('CALL', {
         id, url, method,
+        requestHeaders: reqHeaders,
         requestBody: reqBody,
         status,
         responseBody: body,
@@ -88,6 +91,7 @@
       try { respBody = await clone.text(); } catch { respBody = '[unreadable]'; }
       post('CALL', {
         id, url, method,
+        requestHeaders: reqHeaders,
         requestBody: reqBody,
         status: res.status,
         responseBody: respBody,
@@ -99,6 +103,7 @@
     } catch (err) {
       post('CALL', {
         id, url, method,
+        requestHeaders: reqHeaders,
         requestBody: reqBody,
         status: 0,
         responseBody: `[network error] ${err && err.message || err}`,
@@ -166,6 +171,7 @@
         fire('loadend');
         post('CALL', {
           id, url: ctx.url, method: ctx.method,
+          requestHeaders: ctx.headers || {},
           requestBody: reqBody,
           status, responseBody: respBody,
           mocked: true,
@@ -182,6 +188,7 @@
       try { respBody = typeof xhr.responseText === 'string' ? xhr.responseText : String(xhr.response); } catch {}
       post('CALL', {
         id, url: ctx.url, method: ctx.method,
+        requestHeaders: ctx.headers || {},
         requestBody: reqBody,
         status: xhr.status,
         responseBody: respBody,
@@ -194,6 +201,23 @@
     this.addEventListener('loadend', onDone);
     return origSend.call(this, body);
   };
+
+  function collectFetchHeaders(input, init) {
+    const out = {};
+    const absorb = (h) => {
+      if (!h) return;
+      if (typeof h.forEach === 'function') {
+        h.forEach((v, k) => { out[k.toLowerCase()] = v; });
+      } else if (Array.isArray(h)) {
+        h.forEach(([k, v]) => { out[k.toLowerCase()] = v; });
+      } else if (typeof h === 'object') {
+        Object.entries(h).forEach(([k, v]) => { out[k.toLowerCase()] = v; });
+      }
+    };
+    try { if (input instanceof Request) absorb(input.headers); } catch {}
+    try { if (init && init.headers) absorb(init.headers); } catch {}
+    return out;
+  }
 
   function safeStringify(v) {
     if (v == null) return null;

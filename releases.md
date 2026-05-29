@@ -25,7 +25,7 @@
 
 ---
 
-## v1.1.0 — Copy as cURL ⏳ in progress
+## v1.1.0 — Copy as cURL ✅ done
 
 **Theme:** One-click copy of any captured API call as a ready-to-run cURL command, at Network DevTools parity.
 
@@ -46,3 +46,14 @@
 | `inject-main.js` | Add `requestHeaders` field to CALL payload for fetch and XHR |
 | `panel.js` | Add `buildCurl()`, `escShell()`, `HEADER_BLOCKLIST`; add cURL button to each row with copy + flash logic |
 | `panel.css` | Update `.call` grid to 5 columns; add `.curl-btn` and `.curl-btn.copied` styles |
+
+---
+
+## v2.0.0 — Clear & Reload ✅ done
+
+**Theme:** Network DevTools-style toolbar controls matching the Chrome Network panel UX.
+
+- **Toolbar** — `[↺ Reload] [⊘ Clear] [🔍 Filter…]` icon buttons replace the old text Clear button.
+- **Clear** — wipes all captured calls instantly. Shortcut: `Ctrl+L`.
+- **Reload** — reloads the inspected page and starts fresh call tracking. Shortcut: `Ctrl+R`.
+- Both shortcuts are shown in the button tooltips on hover.
