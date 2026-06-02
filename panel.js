@@ -518,6 +518,22 @@ document.addEventListener('keydown', (e) => {
   if (e.ctrlKey && e.key === 'f' && editorMode === 'tree') { e.preventDefault(); openTreeSearch(); }
 });
 
+callListEl.addEventListener('keydown', (e) => {
+  if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
+  e.preventDefault();
+  const items = [...callListEl.querySelectorAll('.call')];
+  if (!items.length) return;
+  const currentIdx = items.findIndex(el => el.classList.contains('selected'));
+  let nextIdx;
+  if (e.key === 'ArrowDown') {
+    nextIdx = currentIdx === -1 ? 0 : Math.min(currentIdx + 1, items.length - 1);
+  } else {
+    nextIdx = currentIdx === -1 ? items.length - 1 : Math.max(currentIdx - 1, 0);
+  }
+  items[nextIdx].click();
+  items[nextIdx].scrollIntoView({ block: 'nearest' });
+});
+
 filterInput.addEventListener('input', () => {
   filterText = filterInput.value.trim().toLowerCase();
   renderCallList();
@@ -591,6 +607,7 @@ function renderCallList() {
       document.querySelectorAll('.call').forEach(e => e.classList.remove('selected'));
       el.classList.add('selected');
       renderDetail(c);
+      callListEl.focus();
     });
     callListEl.appendChild(el);
   });

@@ -61,6 +61,7 @@ button { cursor: pointer; }
   border-right: 1px solid #e5e7eb; flex-shrink: 0;
 }
 .call-list { flex: 1; overflow-y: auto; }
+.call-list:focus { outline: none; }
 
 .call {
   display: grid;
