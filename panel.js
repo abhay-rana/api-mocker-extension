@@ -33,58 +33,314 @@ overlayEnableBtn.addEventListener('click', () => {
   );
 });
 
-// ── Undo / redo stack for mock editor ─────────────────────────────────────
-const undoStack = [];   // [{ value, selStart, selEnd }, ...]
-let undoPtr = -1;
-const MAX_UNDO = 100;
-let undoDebounceTimer = null;
+// ── Editor mode ────────────────────────────────────────────────────────────
+const EDITOR_MODE_KEY = 'api-mocker-editor-mode';
+let editorMode = localStorage.getItem(EDITOR_MODE_KEY) || 'tree'; // 'tree' | 'codemirror'
+let cmEditor = null;
 
-function pushUndo(immediate = false) {
-  const snap = {
-    value: mockBodyEl.value,
-    selStart: mockBodyEl.selectionStart,
-    selEnd: mockBodyEl.selectionEnd,
-  };
-  // Don't push duplicate snapshots.
-  if (undoPtr >= 0 && undoStack[undoPtr].value === snap.value) return;
-  // Truncate any redo history ahead of current pointer.
-  undoStack.splice(undoPtr + 1);
-  undoStack.push(snap);
-  if (undoStack.length > MAX_UNDO) { undoStack.shift(); }
-  undoPtr = undoStack.length - 1;
+// ── Mock tree state ────────────────────────────────────────────────────────
+let mockContent = null; // { json: parsedObj, raw: string, isJson: boolean }
+let currentMockCallId = null;
+
+function setMockContent(rawText) {
+  const raw = rawText || '';
+  let parsed = null, isJson = false;
+  if (raw.trim()) {
+    try { parsed = JSON.parse(raw); isJson = true; } catch {}
+  }
+  mockContent = { json: parsed, raw, isJson };
 }
 
-function applyUndo() {
-  if (undoPtr <= 0) return;
-  // Push current state as a "redo" snapshot if pointer is at tip.
-  if (undoPtr === undoStack.length - 1) pushUndo(true);
-  undoPtr = Math.max(0, undoPtr - 1);
-  restoreSnapshot(undoStack[undoPtr]);
+function getMockBody() {
+  if (editorMode === 'codemirror' && cmEditor) return cmEditor.state.doc.toString();
+  if (!mockContent) return '';
+  return mockContent.isJson ? JSON.stringify(mockContent.json, null, 2) : mockContent.raw;
 }
 
-function applyRedo() {
-  if (undoPtr >= undoStack.length - 1) return;
-  undoPtr++;
-  restoreSnapshot(undoStack[undoPtr]);
+function setAtPath(obj, pathArr, value) {
+  let cur = obj;
+  for (let i = 0; i < pathArr.length - 1; i++) cur = cur[pathArr[i]];
+  cur[pathArr[pathArr.length - 1]] = value;
 }
 
-function restoreSnapshot(snap) {
-  mockBodyEl.value = snap.value;
-  try { mockBodyEl.setSelectionRange(snap.selStart, snap.selEnd); } catch {}
-  syncHighlight();
-  const v = mockBodyEl.value.trim();
-  if (v && !isJsonOrEmpty(v)) {
-    jsonErrorEl.classList.remove('hidden');
+function parseLeafValue(raw, vtype) {
+  if (vtype === 'string')  return raw;
+  if (vtype === 'number')  { const n = Number(raw); return isNaN(n) ? raw : n; }
+  if (vtype === 'boolean') return raw === 'true';
+  try { return JSON.parse(raw); } catch { return raw === '' ? null : raw; }
+}
+
+function serializePath(path) {
+  return encodeURIComponent(JSON.stringify(path));
+}
+
+function deserializePath(encoded) {
+  return JSON.parse(decodeURIComponent(encoded));
+}
+
+function leafSpanHtml(val, path) {
+  const p = serializePath(path);
+  if (val === null)             return `<span class="jnull editable-leaf" data-path="${p}" data-vtype="null">null</span>`;
+  if (typeof val === 'boolean') return `<span class="jbool editable-leaf" data-path="${p}" data-vtype="boolean">${val}</span>`;
+  if (typeof val === 'number')  return `<span class="jnum editable-leaf" data-path="${p}" data-vtype="number">${esc(String(val))}</span>`;
+  if (typeof val === 'string') {
+    const display = val.length > 120 ? esc(val.slice(0, 120)) + '<span class="jmeta">…</span>' : esc(val);
+    return `<span class="jstr editable-leaf" data-path="${p}" data-vtype="string" data-raw="${esc(val)}">"${display}"</span>`;
+  }
+  return esc(String(val));
+}
+
+function buildEditableTree(val, depth, path) {
+  if (val === null || typeof val !== 'object') return leafSpanHtml(val, path);
+
+  if (Array.isArray(val)) {
+    if (!val.length) return '<span class="jbracket">[]</span>';
+    const open = depth < 1 ? 'open' : '';
+    const items = val.map((v, i) =>
+      `<div class="jrow"><span class="jindex">${i}</span><span class="jcolon">: </span>${buildEditableTree(v, depth + 1, [...path, i])}</div>`
+    ).join('');
+    return `<details class="jtree" ${open}>
+      <summary class="jsummary"><span class="jbracket">[</span><span class="jmeta">&nbsp;${val.length} item${val.length !== 1 ? 's' : ''}&nbsp;</span><span class="jbracket">]</span></summary>
+      <div class="jchildren">${items}</div>
+    </details>`;
+  }
+
+  const keys = Object.keys(val);
+  if (!keys.length) return '<span class="jbracket">{}</span>';
+  const open = depth < 1 ? 'open' : '';
+  const items = keys.map(k =>
+    `<div class="jrow"><span class="jkey">"${esc(k)}"</span><span class="jcolon">: </span>${buildEditableTree(val[k], depth + 1, [...path, k])}</div>`
+  ).join('');
+  return `<details class="jtree" ${open}>
+    <summary class="jsummary"><span class="jbracket">{</span><span class="jmeta">&nbsp;${keys.length} key${keys.length !== 1 ? 's' : ''}&nbsp;</span><span class="jbracket">}</span></summary>
+    <div class="jchildren">${items}</div>
+  </details>`;
+}
+
+function renderMockContentArea() {
+  closeTreeSearch();
+  const treeEl     = document.getElementById('mockTree');
+  const expandBtn  = document.getElementById('mockExpandAllBtn');
+  const collapseBtn = document.getElementById('mockCollapseAllBtn');
+
+  if (!mockContent || !mockContent.raw.trim()) {
+    treeEl.innerHTML = '<span class="empty">(empty)</span>';
+    expandBtn.style.display  = 'none';
+    collapseBtn.style.display = 'none';
+    return;
+  }
+
+  if (mockContent.isJson) {
+    treeEl.innerHTML = buildEditableTree(mockContent.json, 0, []);
   } else {
-    jsonErrorEl.classList.add('hidden');
+    treeEl.innerHTML = `<pre style="margin:0;color:#6b7280;font-size:11px;white-space:pre-wrap">${esc(mockContent.raw)}</pre>`;
+  }
+
+  if (editorMode === 'tree') {
+    const hasTree = treeEl.querySelector('details') !== null;
+    expandBtn.style.display  = hasTree ? '' : 'none';
+    collapseBtn.style.display = hasTree ? '' : 'none';
   }
 }
 
-function resetUndoStack() {
-  undoStack.length = 0;
-  undoPtr = -1;
-  // Push initial state immediately after value is set.
-  requestAnimationFrame(() => pushUndo(true));
+// ── CodeMirror (editor mode) ───────────────────────────────────────────────
+function initCodeMirror() {
+  const {
+    EditorView, EditorState, keymap,
+    lineNumbers, highlightActiveLine, highlightActiveLineGutter, drawSelection,
+    json, foldGutter, foldKeymap, bracketMatching,
+    syntaxHighlighting, HighlightStyle,
+    history, historyKeymap, defaultKeymap,
+    search, searchKeymap,
+    closeBrackets, closeBracketsKeymap,
+    tags,
+  } = window.CM;
+
+  const jsonHighlight = HighlightStyle.define([
+    { tag: tags.propertyName,  color: '#7c3aed' },
+    { tag: tags.string,        color: '#047857' },
+    { tag: tags.number,        color: '#1d4ed8' },
+    { tag: tags.bool,          color: '#b45309' },
+    { tag: tags.null,          color: '#b91c1c' },
+    { tag: tags.punctuation,   color: '#374151' },
+    { tag: tags.bracket,       color: '#374151', fontWeight: 'bold' },
+  ]);
+
+  cmEditor = new EditorView({
+    state: EditorState.create({
+      doc: '',
+      extensions: [
+        lineNumbers(),
+        highlightActiveLineGutter(),
+        foldGutter(),
+        drawSelection(),
+        bracketMatching(),
+        closeBrackets(),
+        history(),
+        highlightActiveLine(),
+        json(),
+        syntaxHighlighting(jsonHighlight),
+        search({ top: true }),
+        keymap.of([
+          ...closeBracketsKeymap,
+          ...defaultKeymap,
+          ...historyKeymap,
+          ...foldKeymap,
+          ...searchKeymap,
+          { key: 'Ctrl-Shift-f', run: (view) => {
+            const v = view.state.doc.toString().trim();
+            if (!v) return true;
+            try {
+              const fmt = JSON.stringify(JSON.parse(v), null, 2);
+              view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: fmt } });
+            } catch {}
+            return true;
+          }},
+        ]),
+        EditorView.theme({
+          '&': { height: '100%', background: '#f8f9ff', fontSize: '12px' },
+          '.cm-scroller': { overflow: 'auto', fontFamily: 'ui-monospace, Consolas, "Courier New", monospace', lineHeight: '1.6' },
+          '.cm-content': { padding: '8px 0', caretColor: '#111827' },
+          '.cm-gutters': { background: '#f0f0f8', border: 'none', borderRight: '1px solid #e5e7eb' },
+          '.cm-lineNumbers .cm-gutterElement': { color: '#9ca3af', minWidth: '28px', padding: '0 6px 0 4px' },
+          '.cm-foldGutter .cm-gutterElement': { color: '#9ca3af', padding: '0 4px', cursor: 'pointer' },
+          '.cm-activeLine': { background: 'rgba(79,70,229,0.04)' },
+          '.cm-activeLineGutter': { background: 'rgba(79,70,229,0.04)' },
+          '.cm-matchingBracket': { background: 'rgba(79,70,229,0.15)', borderRadius: '2px', outline: 'none' },
+          '.cm-selectionBackground, &.cm-focused .cm-selectionBackground': { background: 'rgba(79,70,229,0.2)' },
+          '.cm-cursor': { borderLeftColor: '#111827' },
+          '.cm-searchMatch': { background: 'rgba(253,224,71,0.5)', borderRadius: '2px' },
+          '.cm-searchMatch.cm-searchMatch-selected': { background: 'rgba(251,146,60,0.5)' },
+          '.cm-panels': { background: '#f0f0f8', borderBottom: '1px solid #e5e7eb' },
+          '.cm-panel.cm-search': { padding: '4px 8px', fontSize: '11px', fontFamily: 'ui-monospace, Consolas, monospace' },
+          '.cm-panel.cm-search input': { border: '1px solid #d1d5db', borderRadius: '3px', padding: '2px 5px', fontSize: '11px' },
+          '.cm-panel.cm-search button': { padding: '2px 7px', border: '1px solid #d1d5db', borderRadius: '3px', background: '#fff', fontSize: '11px', cursor: 'pointer', marginLeft: '4px' },
+          '.cm-foldPlaceholder': { background: '#e0d9f7', border: '1px solid #c4b5fd', color: '#5b21b6', borderRadius: '3px', padding: '0 4px', cursor: 'pointer' },
+        }),
+      ],
+    }),
+    parent: document.getElementById('cmEditorWrap'),
+  });
+}
+
+function cmSetValue(text) {
+  if (!cmEditor) return;
+  cmEditor.dispatch({ changes: { from: 0, to: cmEditor.state.doc.length, insert: text } });
+}
+
+function ensureCmInitialized() {
+  if (!cmEditor) initCodeMirror();
+}
+
+function applyEditorModeVisibility() {
+  const treeEl      = document.getElementById('mockTree');
+  const cmWrapEl    = document.getElementById('cmEditorWrap');
+  const expandBtn   = document.getElementById('mockExpandAllBtn');
+  const collapseBtn = document.getElementById('mockCollapseAllBtn');
+  const selectEl    = document.getElementById('editorModeSelect');
+  const searchBtn   = document.getElementById('mockTreeSearchBtn');
+
+  if (editorMode === 'codemirror') {
+    treeEl.style.display    = 'none';
+    cmWrapEl.style.display  = '';
+    expandBtn.style.display  = 'none';
+    collapseBtn.style.display = 'none';
+  } else {
+    treeEl.style.display    = '';
+    cmWrapEl.style.display  = 'none';
+    // expand/collapse visibility is managed by renderMockContentArea
+  }
+  selectEl.value = editorMode;
+}
+
+function switchEditorMode(newMode) {
+  if (newMode === editorMode) return;
+  if (editorMode === 'tree') closeTreeSearch();
+
+  const current = getMockBody(); // grab content from the currently active editor
+  editorMode = newMode;
+  localStorage.setItem(EDITOR_MODE_KEY, editorMode);
+
+  applyEditorModeVisibility();
+
+  if (newMode === 'codemirror') {
+    ensureCmInitialized();
+    cmSetValue(current);
+  } else {
+    setMockContent(current);
+    renderMockContentArea();
+  }
+}
+
+// ── Tree search ────────────────────────────────────────────────────────────
+let treeSearchMatches = [];
+let treeSearchIdx = -1;
+
+function openTreeSearch() {
+  document.getElementById('mockTreeSearch').style.display = '';
+  const input = document.getElementById('mockTreeSearchInput');
+  input.focus();
+  input.select();
+  if (input.value.trim()) runTreeSearch(input.value);
+}
+
+function closeTreeSearch() {
+  document.getElementById('mockTreeSearch').style.display = 'none';
+  clearTreeHighlights();
+  treeSearchMatches = [];
+  treeSearchIdx = -1;
+  document.getElementById('mockTreeSearchInput').value = '';
+  document.getElementById('mockTreeSearchCount').textContent = '';
+}
+
+function runTreeSearch(query) {
+  clearTreeHighlights();
+  treeSearchMatches = [];
+  treeSearchIdx = -1;
+
+  const q = query.trim().toLowerCase();
+  if (!q) { updateTreeSearchCount(); return; }
+
+  document.getElementById('mockTree')
+    .querySelectorAll('.jkey, .jstr, .jnum, .jbool, .jnull')
+    .forEach(el => {
+      if (el.textContent.toLowerCase().includes(q)) {
+        el.classList.add('tree-match');
+        treeSearchMatches.push(el);
+      }
+    });
+
+  if (treeSearchMatches.length) { treeSearchIdx = 0; activateTreeMatch(0); }
+  else updateTreeSearchCount();
+}
+
+function activateTreeMatch(idx) {
+  treeSearchMatches.forEach(el => el.classList.remove('tree-match-current'));
+  if (idx < 0 || idx >= treeSearchMatches.length) return;
+  treeSearchIdx = idx;
+  const el = treeSearchMatches[idx];
+  el.classList.add('tree-match-current');
+  // expand every ancestor <details> so the match is visible
+  let node = el.parentElement;
+  while (node) {
+    if (node.tagName === 'DETAILS') node.setAttribute('open', '');
+    node = node.parentElement;
+  }
+  el.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  updateTreeSearchCount();
+}
+
+function updateTreeSearchCount() {
+  const el = document.getElementById('mockTreeSearchCount');
+  el.textContent = treeSearchMatches.length
+    ? `${treeSearchIdx + 1} / ${treeSearchMatches.length}`
+    : (document.getElementById('mockTreeSearchInput').value.trim() ? 'No results' : '');
+}
+
+function clearTreeHighlights() {
+  document.getElementById('mockTree')
+    .querySelectorAll('.tree-match, .tree-match-current')
+    .forEach(el => el.classList.remove('tree-match', 'tree-match-current'));
 }
 
 // ── DOM ────────────────────────────────────────────────────────────────────
@@ -95,8 +351,6 @@ const detailContent = document.getElementById('detailContent');
 const detailHeader  = document.getElementById('detailHeader');
 const jsonTree      = document.getElementById('jsonTree');
 const mockColTitle  = document.getElementById('mockColTitle');
-const editorHL      = document.getElementById('editorHL');
-const mockBodyEl    = document.getElementById('mockBody');
 const mockStatusEl  = document.getElementById('mockStatus');
 const mockActionsEl = document.getElementById('mockActions');
 const jsonErrorEl   = document.getElementById('jsonError');
@@ -104,6 +358,94 @@ const callCountEl   = document.getElementById('callCount');
 const mockCountEl   = document.getElementById('mockCount');
 const filterInput   = document.getElementById('filterInput');
 const resetOrigBtn  = document.getElementById('resetOrigBtn');
+
+// ── Editor mode select ────────────────────────────────────────────────────
+document.getElementById('editorModeSelect').addEventListener('change', (e) => {
+  switchEditorMode(e.target.value);
+});
+applyEditorModeVisibility();
+
+// ── Mock tree expand / collapse ────────────────────────────────────────────
+document.getElementById('mockExpandAllBtn').addEventListener('click', () => {
+  document.getElementById('mockTree').querySelectorAll('details').forEach(d => d.setAttribute('open', ''));
+});
+document.getElementById('mockCollapseAllBtn').addEventListener('click', () => {
+  document.getElementById('mockTree').querySelectorAll('details').forEach(d => d.removeAttribute('open'));
+});
+
+// ── Tree search events ─────────────────────────────────────────────────────
+document.getElementById('mockTreeSearchBtn').addEventListener('click', () => {
+  if (editorMode === 'codemirror' && cmEditor) {
+    window.CM.search.openSearchPanel(cmEditor);
+    cmEditor.focus();
+  } else {
+    openTreeSearch();
+  }
+});
+
+document.getElementById('mockTreeSearchInput').addEventListener('input', (e) => {
+  runTreeSearch(e.target.value);
+});
+document.getElementById('mockTreeSearchInput').addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') { closeTreeSearch(); return; }
+  if (e.key === 'Enter' && treeSearchMatches.length) {
+    e.preventDefault();
+    const next = e.shiftKey
+      ? (treeSearchIdx - 1 + treeSearchMatches.length) % treeSearchMatches.length
+      : (treeSearchIdx + 1) % treeSearchMatches.length;
+    activateTreeMatch(next);
+  }
+});
+document.getElementById('mockTreeSearchPrev').addEventListener('click', () => {
+  if (!treeSearchMatches.length) return;
+  activateTreeMatch((treeSearchIdx - 1 + treeSearchMatches.length) % treeSearchMatches.length);
+});
+document.getElementById('mockTreeSearchNext').addEventListener('click', () => {
+  if (!treeSearchMatches.length) return;
+  activateTreeMatch((treeSearchIdx + 1) % treeSearchMatches.length);
+});
+document.getElementById('mockTreeSearchClose').addEventListener('click', closeTreeSearch);
+
+// ── Mock tree leaf editing (event delegation) ──────────────────────────────
+document.getElementById('mockTree').addEventListener('click', (e) => {
+  const leaf = e.target.closest('.editable-leaf');
+  if (!leaf) return;
+  startLeafEdit(leaf);
+});
+
+function startLeafEdit(leaf) {
+  const path  = deserializePath(leaf.dataset.path);
+  const vtype = leaf.dataset.vtype;
+
+  const input = document.createElement('input');
+  input.className = 'leaf-input';
+  input.type = 'text';
+  input.value = vtype === 'string' ? (leaf.dataset.raw || '') : leaf.textContent.trim();
+
+  leaf.replaceWith(input);
+  input.focus();
+  input.select();
+
+  function finalize(accept) {
+    input.removeEventListener('blur', onBlur);
+    if (accept) {
+      const newVal = parseLeafValue(input.value, vtype);
+      setAtPath(mockContent.json, path, newVal);
+      const tmp = document.createElement('span');
+      tmp.innerHTML = leafSpanHtml(newVal, path);
+      input.replaceWith(tmp.firstChild);
+    } else {
+      input.replaceWith(leaf);
+    }
+  }
+
+  function onBlur() { finalize(true); }
+  input.addEventListener('blur', onBlur);
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter')  { e.preventDefault(); finalize(true); }
+    if (e.key === 'Escape') { e.preventDefault(); finalize(false); }
+  });
+}
 
 // ── Resize handle ──────────────────────────────────────────────────────────
 const resizeHandle = document.getElementById('resizeHandle');
@@ -173,6 +515,7 @@ document.getElementById('reloadBtn').addEventListener('click', () => {
 document.addEventListener('keydown', (e) => {
   if (e.ctrlKey && e.key === 'l') { e.preventDefault(); clearLog(); }
   if (e.ctrlKey && e.key === 'r') { e.preventDefault(); chrome.tabs.reload(tabId); }
+  if (e.ctrlKey && e.key === 'f' && editorMode === 'tree') { e.preventDefault(); openTreeSearch(); }
 });
 
 filterInput.addEventListener('input', () => {
@@ -376,14 +719,18 @@ function renderMockPanel(c) {
   mockColTitle.textContent = existing ? '✓ Mock Active' : 'Create Mock';
   mockStatusEl.value = existing ? existing.status : (c.status || 200);
 
-  // Only reset editor body when switching to a different call.
-  // Preserves undo stack and typed content when mocks-update fires mid-edit.
-  if (mockBodyEl.dataset.callId !== String(c.id)) {
+  // Only reset content when switching to a different call.
+  // Preserves in-progress edits when mocks-update fires mid-edit.
+  if (currentMockCallId !== String(c.id)) {
     const body = existing ? existing.body : tryPretty(c.responseBody);
-    mockBodyEl.value = body;
-    mockBodyEl.dataset.callId = String(c.id);
-    syncHighlight();
-    resetUndoStack();
+    setMockContent(body); // always keep tree state in sync
+    currentMockCallId = String(c.id);
+    if (editorMode === 'codemirror') {
+      ensureCmInitialized();
+      cmSetValue(body);
+    } else {
+      renderMockContentArea();
+    }
   }
 
   // Actions bar
@@ -395,7 +742,7 @@ function renderMockPanel(c) {
       payload: {
         method: c.method, url: c.url,
         status: parseInt(mockStatusEl.value, 10) || 200,
-        body: mockBodyEl.value,
+        body: getMockBody(),
         enabled: true,
       },
     }, () => void chrome.runtime.lastError);
@@ -434,88 +781,20 @@ function makeBtn(cls, label, onClick) {
   return b;
 }
 
-// ── Syntax highlighting editor ─────────────────────────────────────────────
-function syncHighlight() {
-  editorHL.innerHTML = highlightJson(mockBodyEl.value) + '\n'; // trailing \n prevents last-line scroll glitch
-}
-
-function syncScroll() {
-  editorHL.scrollTop  = mockBodyEl.scrollTop;
-  editorHL.scrollLeft = mockBodyEl.scrollLeft;
-}
-
-mockBodyEl.addEventListener('input', () => {
-  syncHighlight();
-  // Debounced snapshot — captures state 600ms after user stops typing.
-  clearTimeout(undoDebounceTimer);
-  undoDebounceTimer = setTimeout(() => pushUndo(true), 600);
-  const v = mockBodyEl.value.trim();
-  jsonErrorEl.classList.toggle('hidden', !v || isJsonOrEmpty(v));
-});
-
-mockBodyEl.addEventListener('scroll', syncScroll);
-
-// Ctrl+Z → undo, Ctrl+Shift+Z / Ctrl+Y → redo.
-// Must preventDefault to stop DevTools shell from consuming the event.
-mockBodyEl.addEventListener('keydown', (e) => {
-  const mod = e.ctrlKey || e.metaKey;
-  if (!mod) return;
-  if (e.key === 'z' && !e.shiftKey) { e.preventDefault(); applyUndo(); return; }
-  if ((e.key === 'z' && e.shiftKey) || e.key === 'y') { e.preventDefault(); applyRedo(); return; }
-  // Ctrl+Shift+F → format
-  if (e.key === 'F' && e.shiftKey) { e.preventDefault(); formatJson(); }
-});
-
-// Format JSON button
-function formatJson() {
-  const v = mockBodyEl.value.trim();
-  if (!v) return;
-  try {
-    pushUndo(true); // snapshot before bulk-change so it's undoable
-    mockBodyEl.value = JSON.stringify(JSON.parse(v), null, 2);
-    syncHighlight();
-    jsonErrorEl.classList.add('hidden');
-    pushUndo(true); // snapshot the formatted result
-  } catch {}
-}
-document.getElementById('fmtBtn').addEventListener('click', formatJson);
-
-// ↩ Original button — resets editor to actual response body of selected call.
+// ── Reset button ───────────────────────────────────────────────────────────
 resetOrigBtn.addEventListener('click', () => {
   if (!selectedCall) return;
-  pushUndo(true); // save current edit so user can undo this reset
-  mockBodyEl.value = tryPretty(selectedCall.responseBody);
-  syncHighlight();
+  currentMockCallId = null;
+  const body = tryPretty(selectedCall.responseBody);
+  setMockContent(body);
+  if (editorMode === 'codemirror') {
+    ensureCmInitialized();
+    cmSetValue(body);
+  } else {
+    renderMockContentArea();
+  }
   jsonErrorEl.classList.add('hidden');
-  pushUndo(true); // snapshot the restored state
 });
-
-function highlightJson(raw) {
-  // Tokenise raw JSON text into colored spans.
-  // Regex groups: (1) string value  (2) number  (3) literal  (4) punctuation
-  const escaped = raw
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;');
-
-  return escaped.replace(
-    /("(?:\\.|[^"\\])*")\s*(:)|("(?:\\.|[^"\\])*")|(true|false|null)|(-?\d+(?:\.\d+)?(?:[eE][+\-]?\d+)?)|([{}[\],:])/g,
-    (m, keyStr, colon, valStr, literal, num, punct) => {
-      if (keyStr && colon)  return `<span class="hk">${keyStr}</span><span class="hp">${colon}</span>`;
-      if (valStr)           return `<span class="hs">${valStr}</span>`;
-      if (literal === 'true' || literal === 'false') return `<span class="hb">${literal}</span>`;
-      if (literal === 'null') return `<span class="hu">${literal}</span>`;
-      if (num !== undefined)  return `<span class="hn">${num}</span>`;
-      if (punct)              return `<span class="hp">${punct}</span>`;
-      return m;
-    }
-  );
-}
-
-function isJsonOrEmpty(s) {
-  if (!s.trim()) return true;
-  try { JSON.parse(s); return true; } catch { return false; }
-}
 
 // ── Mocks list tab ─────────────────────────────────────────────────────────
 function renderMockList() {
@@ -604,3 +883,4 @@ function tryPretty(s) {
   if (!s) return '';
   try { return JSON.stringify(JSON.parse(s), null, 2); } catch { return s; }
 }
+

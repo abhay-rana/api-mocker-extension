@@ -39,6 +39,8 @@
   post('READY');
 
   // ---------- fetch patch ----------
+  const MAX_BODY_LOG = 256 * 1024; // cap logged body at 256 KB — prevents memory bloat
+
   const origFetch = window.fetch.bind(window);
   window.fetch = async function patchedFetch(input, init) {
     if (!active) return origFetch(input, init);
@@ -86,20 +88,38 @@
 
     try {
       const res = await origFetch(input, init);
-      const clone = res.clone();
-      let respBody = '';
-      try { respBody = await clone.text(); } catch { respBody = '[unreadable]'; }
-      post('CALL', {
-        id, url, method,
-        requestHeaders: reqHeaders,
-        requestBody: reqBody,
-        status: res.status,
-        responseBody: respBody,
-        mocked: false,
-        durationMs: Math.round(performance.now() - startedAt),
-        timestamp: Date.now(),
+      const status = res.status;
+      const elapsed = Math.round(performance.now() - startedAt);
+
+      // Read body clone in background — never block the caller waiting for the full body
+      res.clone().text().then(text => {
+        const respBody = text.length > MAX_BODY_LOG
+          ? text.slice(0, MAX_BODY_LOG) + '\n… [truncated — response too large to log]'
+          : text;
+        post('CALL', {
+          id, url, method,
+          requestHeaders: reqHeaders,
+          requestBody: reqBody,
+          status,
+          responseBody: respBody,
+          mocked: false,
+          durationMs: elapsed,
+          timestamp: Date.now(),
+        });
+      }).catch(() => {
+        post('CALL', {
+          id, url, method,
+          requestHeaders: reqHeaders,
+          requestBody: reqBody,
+          status,
+          responseBody: '[unreadable]',
+          mocked: false,
+          durationMs: elapsed,
+          timestamp: Date.now(),
+        });
       });
-      return res;
+
+      return res; // returned immediately — app is never blocked by our logging
     } catch (err) {
       post('CALL', {
         id, url, method,

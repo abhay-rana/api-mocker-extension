@@ -84,19 +84,35 @@
                 <div class="col-toolbar">
                   <span class="col-title" id="mockColTitle">Create Mock</span>
                   <div class="col-toolbar-right">
+                    <button id="mockTreeSearchBtn" class="tiny-btn search-icon-btn" title="Ctrl+F to search">
+                      <svg width="11" height="11" viewBox="0 0 14 14" fill="none">
+                        <circle cx="5.5" cy="5.5" r="4" stroke="currentColor" stroke-width="1.5"/>
+                        <path d="M9 9l3.5 3.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                      </svg>
+                    </button>
+                    <select id="editorModeSelect" class="mode-select" title="Switch editor style">
+                      <option value="tree">Tree</option>
+                      <option value="codemirror">Editor</option>
+                    </select>
+                    <button class="tiny-btn" id="mockExpandAllBtn" style="display:none">Expand all</button>
+                    <button class="tiny-btn" id="mockCollapseAllBtn" style="display:none">Collapse all</button>
                     <label class="status-label">
                       Status
                       <input type="number" id="mockStatus" value="200" min="100" max="599" />
                     </label>
-                    <button class="tiny-btn" id="resetOrigBtn" title="Reset editor to actual response body">↩ Original</button>
-                    <button class="tiny-btn" id="fmtBtn" title="Format JSON (Ctrl+Shift+F)">{ }</button>
+                    <button class="tiny-btn" id="resetOrigBtn" title="Reset to actual response body">↩ Original</button>
                   </div>
                 </div>
 
-                <div class="editor-wrap" id="editorWrap">
-                  <pre class="editor-hl" id="editorHL" aria-hidden="true"></pre>
-                  <textarea id="mockBody" class="editor-input" spellcheck="false" autocomplete="off"></textarea>
+                <div id="mockTreeSearch" class="tree-search-panel" style="display:none">
+                  <input type="text" id="mockTreeSearchInput" placeholder="Search keys and values…" />
+                  <span id="mockTreeSearchCount" class="search-count"></span>
+                  <button id="mockTreeSearchPrev" class="search-nav" title="Previous (Shift+Enter)">↑</button>
+                  <button id="mockTreeSearchNext" class="search-nav" title="Next (Enter)">↓</button>
+                  <button id="mockTreeSearchClose" class="search-close" title="Close (Esc)">✕</button>
                 </div>
+                <div class="tree-wrap" id="mockTree"></div>
+                <div id="cmEditorWrap" class="cm-editor-wrap" style="display:none"></div>
 
                 <div id="jsonError" class="json-error hidden">⚠ Invalid JSON — saved as plain text</div>
 
@@ -116,6 +132,7 @@
     </div>
 
   </div><!-- /root -->
+  <script src="codemirror-bundle.js"></script>
   <script src="panel.js"></script>
 </body>
 </html>
