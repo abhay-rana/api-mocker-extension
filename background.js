@@ -201,6 +201,31 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       sendResponse({ ok: true });
       return;
     }
+
+    if (msg.type === 'ENABLE_ALL_MOCKS') {
+      const mocks = await loadMocks();
+      for (const k of Object.keys(mocks)) mocks[k].enabled = true;
+      await saveMocks(mocks);
+      broadcastMocks(mocks);
+      sendResponse({ ok: true });
+      return;
+    }
+
+    if (msg.type === 'DISABLE_ALL_MOCKS') {
+      const mocks = await loadMocks();
+      for (const k of Object.keys(mocks)) mocks[k].enabled = false;
+      await saveMocks(mocks);
+      broadcastMocks(mocks);
+      sendResponse({ ok: true });
+      return;
+    }
+
+    if (msg.type === 'DELETE_ALL_MOCKS') {
+      await saveMocks({});
+      broadcastMocks({});
+      sendResponse({ ok: true });
+      return;
+    }
   })();
   return true;
 });

@@ -358,6 +358,33 @@ const callCountEl   = document.getElementById('callCount');
 const mockCountEl   = document.getElementById('mockCount');
 const filterInput   = document.getElementById('filterInput');
 const resetOrigBtn  = document.getElementById('resetOrigBtn');
+const enableAllBtn  = document.getElementById('enableAllBtn');
+const disableAllBtn = document.getElementById('disableAllBtn');
+const deleteAllBtn  = document.getElementById('deleteAllBtn');
+const sortToggleBtn = document.getElementById('sortToggleBtn');
+
+// ── Sort order ─────────────────────────────────────────────────────────────
+const SORT_KEY = 'api-mocker-sort';
+let sortNewestBottom = localStorage.getItem(SORT_KEY) !== 'oldest';
+let autoScrollEnabled = true;
+
+function updateSortBtn() {
+  sortToggleBtn.textContent = sortNewestBottom ? '↓ Newest' : '↑ Oldest';
+}
+updateSortBtn();
+
+callListEl.addEventListener('scroll', () => {
+  const atBottom = callListEl.scrollHeight - callListEl.scrollTop - callListEl.clientHeight < 8;
+  autoScrollEnabled = atBottom;
+});
+
+sortToggleBtn.addEventListener('click', () => {
+  sortNewestBottom = !sortNewestBottom;
+  localStorage.setItem(SORT_KEY, sortNewestBottom ? 'newest' : 'oldest');
+  updateSortBtn();
+  autoScrollEnabled = true;
+  renderCallList();
+});
 
 // ── Editor mode select ────────────────────────────────────────────────────
 document.getElementById('editorModeSelect').addEventListener('change', (e) => {
@@ -501,6 +528,7 @@ document.querySelectorAll('.body-tab').forEach(btn => {
 function clearLog() {
   calls = [];
   selectedCall = null;
+  autoScrollEnabled = true;
   renderCallList();
   showEmptyDetail();
   port.postMessage({ type: 'CLEAR_LOG' });
@@ -576,7 +604,7 @@ function renderCallList() {
     return;
   }
 
-  [...list].reverse().forEach(c => {
+  (sortNewestBottom ? list : [...list].reverse()).forEach(c => {
     const el = document.createElement('div');
     const sc = c.status >= 400 ? 'err' : c.status >= 300 ? 'warn' : 'ok';
     const ms = c.mocked ? 'mock' : c.durationMs > 0 ? `${c.durationMs}ms` : '—';
@@ -611,6 +639,10 @@ function renderCallList() {
     });
     callListEl.appendChild(el);
   });
+
+  if (sortNewestBottom && autoScrollEnabled) {
+    callListEl.scrollTop = callListEl.scrollHeight;
+  }
 }
 
 // ── Detail rendering ───────────────────────────────────────────────────────
@@ -814,10 +846,32 @@ resetOrigBtn.addEventListener('click', () => {
 });
 
 // ── Mocks list tab ─────────────────────────────────────────────────────────
+function updateBulkButtons(count) {
+  const off = count === 0;
+  enableAllBtn.disabled  = off;
+  disableAllBtn.disabled = off;
+  deleteAllBtn.disabled  = off;
+}
+
+enableAllBtn.addEventListener('click', () => {
+  chrome.runtime.sendMessage({ type: 'ENABLE_ALL_MOCKS' }, () => void chrome.runtime.lastError);
+});
+
+disableAllBtn.addEventListener('click', () => {
+  chrome.runtime.sendMessage({ type: 'DISABLE_ALL_MOCKS' }, () => void chrome.runtime.lastError);
+});
+
+deleteAllBtn.addEventListener('click', () => {
+  const count = Object.keys(mocks).length;
+  if (!confirm(`Delete all ${count} mock${count !== 1 ? 's' : ''}? This cannot be undone.`)) return;
+  chrome.runtime.sendMessage({ type: 'DELETE_ALL_MOCKS' }, () => void chrome.runtime.lastError);
+});
+
 function renderMockList() {
   const mockListEl = document.getElementById('mockList');
   const keys = Object.keys(mocks);
   mockCountEl.textContent = keys.length;
+  updateBulkButtons(keys.length);
 
   if (!keys.length) {
     mockListEl.innerHTML = '<div class="list-empty">No mocks saved yet.<br>Click a call → "Save as Mock".</div>';
