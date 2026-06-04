@@ -42,6 +42,13 @@ let cmEditor = null;
 let mockContent = null; // { json: parsedObj, raw: string, isJson: boolean }
 let currentMockCallId = null;
 
+// ── Mock drawer state ──────────────────────────────────────────────────────
+let openMockKey    = null;
+let drawerEl       = null;
+let drawerCmEditor = null;
+let drawerMode     = editorMode;
+let drawerMockContent = null;
+
 function setMockContent(rawText) {
   const raw = rawText || '';
   let parsed = null, isJson = false;
@@ -474,6 +481,264 @@ function startLeafEdit(leaf) {
   });
 }
 
+// ── Mock drawer ─────────────────────────────────────────────────────────────
+function getOrCreateDrawer() {
+  if (drawerEl) return drawerEl;
+  drawerEl = document.createElement('div');
+  drawerEl.className = 'mock-drawer';
+  drawerEl.innerHTML = `
+    <div class="mock-drawer-toolbar">
+      <select class="mode-select drawer-mode-select">
+        <option value="tree">Tree</option>
+        <option value="codemirror">Editor</option>
+      </select>
+      <button class="tiny-btn drawer-expand-btn" style="display:none">Expand all</button>
+      <button class="tiny-btn drawer-collapse-btn" style="display:none">Collapse all</button>
+      <span style="flex:1"></span>
+      <button class="btn primary drawer-save-btn">Save</button>
+    </div>
+    <div class="mock-drawer-body">
+      <div class="tree-wrap drawer-tree"></div>
+      <div class="cm-editor-wrap drawer-cm-wrap" style="display:none"></div>
+    </div>
+    <div class="drawer-json-error hidden">⚠ Invalid JSON — saved as plain text</div>
+  `;
+  drawerEl.querySelector('.drawer-mode-select').addEventListener('change', e => switchDrawerMode(e.target.value));
+  drawerEl.querySelector('.drawer-expand-btn').addEventListener('click', () => {
+    drawerEl.querySelector('.drawer-tree').querySelectorAll('details').forEach(d => d.setAttribute('open', ''));
+  });
+  drawerEl.querySelector('.drawer-collapse-btn').addEventListener('click', () => {
+    drawerEl.querySelector('.drawer-tree').querySelectorAll('details').forEach(d => d.removeAttribute('open'));
+  });
+  drawerEl.querySelector('.drawer-tree').addEventListener('click', e => {
+    const leaf = e.target.closest('.editable-leaf');
+    if (leaf) startDrawerLeafEdit(leaf);
+  });
+  drawerEl.querySelector('.drawer-save-btn').addEventListener('click', saveDrawerMock);
+  return drawerEl;
+}
+
+function setDrawerContent(rawText) {
+  const raw = rawText || '';
+  let parsed = null, isJson = false;
+  if (raw.trim()) { try { parsed = JSON.parse(raw); isJson = true; } catch {} }
+  drawerMockContent = { json: parsed, raw, isJson };
+}
+
+function getDrawerBody() {
+  if (drawerMode === 'codemirror' && drawerCmEditor) return drawerCmEditor.state.doc.toString();
+  if (!drawerMockContent) return '';
+  return drawerMockContent.isJson ? JSON.stringify(drawerMockContent.json, null, 2) : drawerMockContent.raw;
+}
+
+function renderDrawerTree() {
+  const treeEl      = drawerEl.querySelector('.drawer-tree');
+  const expandBtn   = drawerEl.querySelector('.drawer-expand-btn');
+  const collapseBtn = drawerEl.querySelector('.drawer-collapse-btn');
+  if (!drawerMockContent || !drawerMockContent.raw.trim()) {
+    treeEl.innerHTML = '<span class="empty">(empty)</span>';
+    expandBtn.style.display = 'none';
+    collapseBtn.style.display = 'none';
+    return;
+  }
+  if (drawerMockContent.isJson) {
+    treeEl.innerHTML = buildEditableTree(drawerMockContent.json, 0, []);
+  } else {
+    treeEl.innerHTML = `<pre style="margin:0;color:#6b7280;font-size:11px;white-space:pre-wrap">${esc(drawerMockContent.raw)}</pre>`;
+  }
+  if (drawerMode === 'tree') {
+    const hasTree = treeEl.querySelector('details') !== null;
+    expandBtn.style.display   = hasTree ? '' : 'none';
+    collapseBtn.style.display = hasTree ? '' : 'none';
+  }
+}
+
+function applyDrawerModeVisibility() {
+  const treeEl      = drawerEl.querySelector('.drawer-tree');
+  const cmWrap      = drawerEl.querySelector('.drawer-cm-wrap');
+  const expandBtn   = drawerEl.querySelector('.drawer-expand-btn');
+  const collapseBtn = drawerEl.querySelector('.drawer-collapse-btn');
+  const selectEl    = drawerEl.querySelector('.drawer-mode-select');
+  if (drawerMode === 'codemirror') {
+    treeEl.style.display      = 'none';
+    cmWrap.style.display      = '';
+    expandBtn.style.display   = 'none';
+    collapseBtn.style.display = 'none';
+  } else {
+    treeEl.style.display  = '';
+    cmWrap.style.display  = 'none';
+    // expand/collapse visibility managed by renderDrawerTree
+  }
+  selectEl.value = drawerMode;
+}
+
+function initDrawerCodeMirror() {
+  if (drawerCmEditor) return;
+  const { EditorView, EditorState, keymap,
+    lineNumbers, highlightActiveLine, highlightActiveLineGutter, drawSelection,
+    json, foldGutter, foldKeymap, bracketMatching,
+    syntaxHighlighting, HighlightStyle,
+    history, historyKeymap, defaultKeymap,
+    search, searchKeymap,
+    closeBrackets, closeBracketsKeymap, tags } = window.CM;
+  const jsonHighlight = HighlightStyle.define([
+    { tag: tags.propertyName, color: '#7c3aed' },
+    { tag: tags.string,       color: '#047857' },
+    { tag: tags.number,       color: '#1d4ed8' },
+    { tag: tags.bool,         color: '#b45309' },
+    { tag: tags.null,         color: '#b91c1c' },
+    { tag: tags.punctuation,  color: '#374151' },
+    { tag: tags.bracket,      color: '#374151', fontWeight: 'bold' },
+  ]);
+  drawerCmEditor = new EditorView({
+    state: EditorState.create({
+      doc: '',
+      extensions: [
+        lineNumbers(), highlightActiveLineGutter(), foldGutter(), drawSelection(),
+        bracketMatching(), closeBrackets(), history(), highlightActiveLine(),
+        json(), syntaxHighlighting(jsonHighlight), search({ top: true }),
+        keymap.of([
+          ...closeBracketsKeymap, ...defaultKeymap, ...historyKeymap,
+          ...foldKeymap, ...searchKeymap,
+          { key: 'Ctrl-Shift-f', run: (view) => {
+            const v = view.state.doc.toString().trim();
+            if (!v) return true;
+            try {
+              const fmt = JSON.stringify(JSON.parse(v), null, 2);
+              view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: fmt } });
+            } catch {}
+            return true;
+          }},
+        ]),
+        EditorView.theme({
+          '&': { height: '100%', background: '#f8f9ff', fontSize: '12px' },
+          '.cm-scroller': { overflow: 'auto', fontFamily: 'ui-monospace, Consolas, "Courier New", monospace', lineHeight: '1.6' },
+          '.cm-content': { padding: '8px 0', caretColor: '#111827' },
+          '.cm-gutters': { background: '#f0f0f8', border: 'none', borderRight: '1px solid #e5e7eb' },
+          '.cm-lineNumbers .cm-gutterElement': { color: '#9ca3af', minWidth: '28px', padding: '0 6px 0 4px' },
+          '.cm-foldGutter .cm-gutterElement': { color: '#9ca3af', padding: '0 4px', cursor: 'pointer' },
+          '.cm-activeLine': { background: 'rgba(79,70,229,0.04)' },
+          '.cm-activeLineGutter': { background: 'rgba(79,70,229,0.04)' },
+          '.cm-matchingBracket': { background: 'rgba(79,70,229,0.15)', borderRadius: '2px', outline: 'none' },
+          '.cm-selectionBackground, &.cm-focused .cm-selectionBackground': { background: 'rgba(79,70,229,0.2)' },
+          '.cm-cursor': { borderLeftColor: '#111827' },
+          '.cm-searchMatch': { background: 'rgba(253,224,71,0.5)', borderRadius: '2px' },
+          '.cm-searchMatch.cm-searchMatch-selected': { background: 'rgba(251,146,60,0.5)' },
+          '.cm-panels': { background: '#f0f0f8', borderBottom: '1px solid #e5e7eb' },
+          '.cm-panel.cm-search': { padding: '4px 8px', fontSize: '11px', fontFamily: 'ui-monospace, Consolas, monospace' },
+          '.cm-panel.cm-search input': { border: '1px solid #d1d5db', borderRadius: '3px', padding: '2px 5px', fontSize: '11px' },
+          '.cm-panel.cm-search button': { padding: '2px 7px', border: '1px solid #d1d5db', borderRadius: '3px', background: '#fff', fontSize: '11px', cursor: 'pointer', marginLeft: '4px' },
+          '.cm-foldPlaceholder': { background: '#e0d9f7', border: '1px solid #c4b5fd', color: '#5b21b6', borderRadius: '3px', padding: '0 4px', cursor: 'pointer' },
+        }),
+      ],
+    }),
+    parent: drawerEl.querySelector('.drawer-cm-wrap'),
+  });
+}
+
+function drawerCmSetValue(text) {
+  if (!drawerCmEditor) return;
+  drawerCmEditor.dispatch({ changes: { from: 0, to: drawerCmEditor.state.doc.length, insert: text } });
+}
+
+function switchDrawerMode(newMode) {
+  if (newMode === drawerMode) return;
+  const current = getDrawerBody();
+  drawerMode = newMode;
+  applyDrawerModeVisibility();
+  if (newMode === 'codemirror') {
+    initDrawerCodeMirror();
+    drawerCmSetValue(current);
+  } else {
+    setDrawerContent(current);
+    renderDrawerTree();
+  }
+}
+
+function startDrawerLeafEdit(leaf) {
+  const path  = deserializePath(leaf.dataset.path);
+  const vtype = leaf.dataset.vtype;
+  const input = document.createElement('input');
+  input.className = 'leaf-input';
+  input.type = 'text';
+  input.value = vtype === 'string' ? (leaf.dataset.raw || '') : leaf.textContent.trim();
+  leaf.replaceWith(input);
+  input.focus();
+  input.select();
+  function finalize(accept) {
+    input.removeEventListener('blur', onBlur);
+    if (accept) {
+      const newVal = parseLeafValue(input.value, vtype);
+      setAtPath(drawerMockContent.json, path, newVal);
+      const tmp = document.createElement('span');
+      tmp.innerHTML = leafSpanHtml(newVal, path);
+      input.replaceWith(tmp.firstChild);
+    } else {
+      input.replaceWith(leaf);
+    }
+  }
+  function onBlur() { finalize(true); }
+  input.addEventListener('blur', onBlur);
+  input.addEventListener('keydown', e => {
+    if (e.key === 'Enter')  { e.preventDefault(); finalize(true); }
+    if (e.key === 'Escape') { e.preventDefault(); finalize(false); }
+  });
+}
+
+function saveDrawerMock() {
+  if (!openMockKey || !mocks[openMockKey]) return;
+  const m      = mocks[openMockKey];
+  const body   = getDrawerBody();
+  const saveBtn = drawerEl.querySelector('.drawer-save-btn');
+  const errEl   = drawerEl.querySelector('.drawer-json-error');
+  if (body.trim()) {
+    try { JSON.parse(body); errEl.classList.add('hidden'); }
+    catch { errEl.classList.remove('hidden'); }
+  } else {
+    errEl.classList.add('hidden');
+  }
+  saveBtn.disabled = true;
+  chrome.runtime.sendMessage({
+    type: 'SAVE_MOCK',
+    payload: { method: m.method, url: m.url, status: m.status, body, enabled: m.enabled },
+  }, () => { void chrome.runtime.lastError; saveBtn.disabled = false; });
+}
+
+function openMockDrawer(key) {
+  if (!mocks[key]) return;
+  const drawer = getOrCreateDrawer();
+  const m = mocks[key];
+  openMockKey = key;
+
+  const mockListEl = document.getElementById('mockList');
+  mockListEl.querySelectorAll('.mock-chevron').forEach(c => c.classList.remove('open'));
+  const card = mockListEl.querySelector(`[data-mock-key="${CSS.escape(key)}"]`);
+  if (!card) return;
+
+  card.querySelector('.mock-chevron').classList.add('open');
+  card.appendChild(drawer); // attach to DOM before CodeMirror init
+
+  const body = tryPretty(m.body);
+  setDrawerContent(body);
+  drawerMode = editorMode;
+  applyDrawerModeVisibility();
+  drawerEl.querySelector('.drawer-json-error').classList.add('hidden');
+
+  if (drawerMode === 'codemirror') {
+    initDrawerCodeMirror();
+    drawerCmSetValue(body);
+  } else {
+    renderDrawerTree();
+  }
+}
+
+function closeMockDrawer() {
+  openMockKey = null;
+  if (drawerEl && drawerEl.parentElement) drawerEl.remove();
+  document.getElementById('mockList').querySelectorAll('.mock-chevron')
+    .forEach(c => c.classList.remove('open'));
+}
+
 // ── Resize handle ──────────────────────────────────────────────────────────
 const resizeHandle = document.getElementById('resizeHandle');
 let resizing = false, resizeStartX = 0, resizeStartW = 0;
@@ -874,6 +1139,7 @@ function renderMockList() {
   updateBulkButtons(keys.length);
 
   if (!keys.length) {
+    openMockKey = null;
     mockListEl.innerHTML = '<div class="list-empty">No mocks saved yet.<br>Click a call → "Save as Mock".</div>';
     return;
   }
@@ -883,12 +1149,14 @@ function renderMockList() {
     const m = mocks[key];
     const card = document.createElement('div');
     card.className = 'mock-card';
+    card.dataset.mockKey = key;
     card.innerHTML = `
       <div class="mock-card-head">
         <span class="cm ${esc(m.method)}">${esc(m.method)}</span>
         <span class="mock-card-url" title="${esc(m.url)}">${esc(m.url)}</span>
         <span class="badge">${m.status}</span>
         <div class="switch ${m.enabled ? 'on' : ''}" data-key="${esc(key)}" title="${m.enabled ? 'Disable' : 'Enable'}"></div>
+        <button class="mock-chevron" data-key="${esc(key)}" title="View / edit mock body">›</button>
       </div>
       <div style="font-size:11px;color:#9ca3af;margin-top:4px">
         Saved ${new Date(m.savedAt).toLocaleString()}
@@ -908,8 +1176,23 @@ function renderMockList() {
       await chrome.runtime.sendMessage({ type: 'DELETE_MOCK', key: k },
         () => void chrome.runtime.lastError);
     });
+    card.querySelector('.mock-chevron').addEventListener('click', e => {
+      const k = e.currentTarget.dataset.key;
+      if (openMockKey === k) { closeMockDrawer(); } else { openMockDrawer(k); }
+    });
     mockListEl.appendChild(card);
   });
+
+  // Re-attach drawer if a key was open (preserves unsaved edits across re-renders)
+  if (openMockKey && mocks[openMockKey] && drawerEl) {
+    const card = mockListEl.querySelector(`[data-mock-key="${CSS.escape(openMockKey)}"]`);
+    if (card) {
+      card.querySelector('.mock-chevron').classList.add('open');
+      card.appendChild(drawerEl);
+    }
+  } else if (openMockKey && !mocks[openMockKey]) {
+    openMockKey = null; // mock was deleted
+  }
 }
 
 // ── cURL builder ──────────────────────────────────────────────────────────

@@ -83,7 +83,7 @@ async function refreshTabIcon(tabId) {
 // ── Broadcast helpers ────────────────────────────────────────────────────────
 
 async function broadcastMocks(mocks) {
-  const tabs = await chrome.tabs.query({});
+  const tabs = await chrome.tabs.query({ url: ['http://*/*', 'https://*/*'] });
   for (const t of tabs) {
     if (!t.id) continue;
     chrome.tabs.sendMessage(t.id, { type: 'MOCKS_UPDATED', payload: mocks }).catch(() => {});
