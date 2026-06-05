@@ -6,9 +6,11 @@ const port  = chrome.runtime.connect({ name: `panel:${tabId}` });
 let calls = [];
 let mocks = {};
 let selectedCall = null;
+let selectedCallEl = null; // direct ref — avoids querySelectorAll on every click
 let filterText = '';
 let currentPanelDomain = '';
 let activeBodyTab = 'response'; // 'response' | 'request'
+let lastMockPanelState = ''; // serialized key to skip redundant action-bar rebuilds
 
 // ── Disabled overlay ────────────────────────────────────────────────────────
 const disabledOverlay = document.getElementById('disabledOverlay');
@@ -741,7 +743,7 @@ function closeMockDrawer() {
 
 // ── Resize handle ──────────────────────────────────────────────────────────
 const resizeHandle = document.getElementById('resizeHandle');
-let resizing = false, resizeStartX = 0, resizeStartW = 0;
+let resizing = false, resizeStartX = 0, resizeStartW = 0, resizeRafId = null, resizeLastX = 0;
 
 const RESIZE_KEY = 'api-mocker-list-width';
 const savedW = parseInt(localStorage.getItem(RESIZE_KEY), 10);
@@ -750,6 +752,7 @@ if (savedW && savedW > 100) callListCol.style.width = savedW + 'px';
 resizeHandle.addEventListener('mousedown', (e) => {
   resizing = true;
   resizeStartX = e.clientX;
+  resizeLastX = e.clientX;
   resizeStartW = callListCol.offsetWidth;
   resizeHandle.classList.add('dragging');
   document.body.style.userSelect = 'none';
@@ -757,11 +760,17 @@ resizeHandle.addEventListener('mousedown', (e) => {
 });
 document.addEventListener('mousemove', (e) => {
   if (!resizing) return;
-  const w = Math.max(160, Math.min(resizeStartW + e.clientX - resizeStartX, window.innerWidth * 0.6));
-  callListCol.style.width = w + 'px';
+  resizeLastX = e.clientX;
+  if (resizeRafId) return; // already scheduled — skip, use latest position on next frame
+  resizeRafId = requestAnimationFrame(() => {
+    resizeRafId = null;
+    const w = Math.max(160, Math.min(resizeStartW + resizeLastX - resizeStartX, window.innerWidth * 0.6));
+    callListCol.style.width = w + 'px';
+  });
 });
 document.addEventListener('mouseup', () => {
   if (!resizing) return;
+  if (resizeRafId) { cancelAnimationFrame(resizeRafId); resizeRafId = null; }
   resizing = false;
   resizeHandle.classList.remove('dragging');
   document.body.style.userSelect = '';
@@ -827,9 +836,13 @@ callListEl.addEventListener('keydown', (e) => {
   items[nextIdx].scrollIntoView({ block: 'nearest' });
 });
 
+let filterDebounceId = null;
 filterInput.addEventListener('input', () => {
-  filterText = filterInput.value.trim().toLowerCase();
-  renderCallList();
+  clearTimeout(filterDebounceId);
+  filterDebounceId = setTimeout(() => {
+    filterText = filterInput.value.trim().toLowerCase();
+    renderCallList();
+  }, 120);
 });
 
 // ── Port messages ──────────────────────────────────────────────────────────
@@ -842,8 +855,7 @@ port.onMessage.addListener((msg) => {
     showEmptyDetail();
   } else if (msg.type === 'CALL') {
     calls.push(msg.payload);
-    renderCallList();
-    callCountEl.textContent = visibleCalls().length;
+    appendSingleCall(msg.payload);
   } else if (msg.type === 'MOCKS_UPDATED') {
     mocks = msg.payload || {};
     mockCountEl.textContent = Object.keys(mocks).length;
@@ -859,7 +871,42 @@ function visibleCalls() {
   return filterText ? calls.filter(c => c.url.toLowerCase().includes(filterText)) : calls;
 }
 
+function buildCallElement(c) {
+  const el = document.createElement('div');
+  const sc = c.status >= 400 ? 'err' : c.status >= 300 ? 'warn' : 'ok';
+  const ms = c.mocked ? 'mock' : c.durationMs > 0 ? `${c.durationMs}ms` : '—';
+  const key = `${c.method} ${c.url}`;
+  const isMocked = c.mocked || !!mocks[key];
+  el.className = 'call' + (isMocked ? ' mocked' : '') + (selectedCall === c ? ' selected' : '');
+  el.innerHTML = `
+    <span class="cm ${c.method}">${esc(c.method)}</span>
+    <span class="cs ${sc}">${c.status || '—'}</span>
+    <span class="cu" title="${esc(c.url)}">${urlPath(c.url)}</span>
+    <span class="ct">${ms}</span>
+    <button class="curl-btn" title="Copy as cURL">⧉ cURL</button>
+  `;
+  el.querySelector('.curl-btn').addEventListener('click', (e) => {
+    e.stopPropagation();
+    const btn = e.currentTarget;
+    navigator.clipboard.writeText(buildCurl(c)).then(() => {
+      btn.textContent = '✓ Copied';
+      btn.classList.add('copied');
+      setTimeout(() => { btn.textContent = '⧉ cURL'; btn.classList.remove('copied'); }, 1500);
+    });
+  });
+  el.addEventListener('click', () => {
+    if (selectedCallEl) selectedCallEl.classList.remove('selected');
+    selectedCallEl = el;
+    selectedCall = c;
+    el.classList.add('selected');
+    renderDetail(c);
+    callListEl.focus();
+  });
+  return el;
+}
+
 function renderCallList() {
+  selectedCallEl = null;
   const list = visibleCalls();
   callCountEl.textContent = list.length;
   callListEl.innerHTML = '';
@@ -869,44 +916,34 @@ function renderCallList() {
     return;
   }
 
+  const frag = document.createDocumentFragment();
   (sortNewestBottom ? list : [...list].reverse()).forEach(c => {
-    const el = document.createElement('div');
-    const sc = c.status >= 400 ? 'err' : c.status >= 300 ? 'warn' : 'ok';
-    const ms = c.mocked ? 'mock' : c.durationMs > 0 ? `${c.durationMs}ms` : '—';
-    const key = `${c.method} ${c.url}`;
-    const isMocked = c.mocked || !!mocks[key];
-    el.className = 'call' + (isMocked ? ' mocked' : '') + (selectedCall === c ? ' selected' : '');
-    el.innerHTML = `
-      <span class="cm ${c.method}">${esc(c.method)}</span>
-      <span class="cs ${sc}">${c.status || '—'}</span>
-      <span class="cu" title="${esc(c.url)}">${urlPath(c.url)}</span>
-      <span class="ct">${ms}</span>
-      <button class="curl-btn" title="Copy as cURL">⧉ cURL</button>
-    `;
-    el.querySelector('.curl-btn').addEventListener('click', (e) => {
-      e.stopPropagation();
-      const btn = e.currentTarget;
-      navigator.clipboard.writeText(buildCurl(c)).then(() => {
-        btn.textContent = '✓ Copied';
-        btn.classList.add('copied');
-        setTimeout(() => {
-          btn.textContent = '⧉ cURL';
-          btn.classList.remove('copied');
-        }, 1500);
-      });
-    });
-    el.addEventListener('click', () => {
-      selectedCall = c;
-      document.querySelectorAll('.call').forEach(e => e.classList.remove('selected'));
-      el.classList.add('selected');
-      renderDetail(c);
-      callListEl.focus();
-    });
-    callListEl.appendChild(el);
+    const el = buildCallElement(c);
+    if (selectedCall === c) selectedCallEl = el;
+    frag.appendChild(el);
   });
+  callListEl.appendChild(frag);
 
   if (sortNewestBottom && autoScrollEnabled) {
     callListEl.scrollTop = callListEl.scrollHeight;
+  }
+}
+
+function appendSingleCall(c) {
+  const empty = callListEl.querySelector('.list-empty');
+  if (empty) empty.remove();
+
+  const visible = visibleCalls();
+  callCountEl.textContent = visible.length;
+
+  if (filterText && !c.url.toLowerCase().includes(filterText)) return;
+
+  const el = buildCallElement(c);
+  if (sortNewestBottom) {
+    callListEl.appendChild(el);
+    if (autoScrollEnabled) callListEl.scrollTop = callListEl.scrollHeight;
+  } else {
+    callListEl.insertBefore(el, callListEl.firstChild);
   }
 }
 
@@ -944,10 +981,16 @@ function renderDetail(c) {
   renderMockPanel(c);
 }
 
-function renderActiveTree(c) {
-  const expandAllBtn  = document.getElementById('expandAllBtn');
-  const collapseAllBtn = document.getElementById('collapseAllBtn');
+const expandAllBtn   = document.getElementById('expandAllBtn');
+const collapseAllBtn = document.getElementById('collapseAllBtn');
+expandAllBtn.addEventListener('click', () => {
+  jsonTree.querySelectorAll('details').forEach(d => d.setAttribute('open', ''));
+});
+collapseAllBtn.addEventListener('click', () => {
+  jsonTree.querySelectorAll('details').forEach(d => d.removeAttribute('open'));
+});
 
+function renderActiveTree(c) {
   if (activeBodyTab === 'request') {
     if (!c.requestBody || !c.requestBody.trim()) {
       jsonTree.innerHTML = '<span class="empty">No request body</span>';
@@ -964,19 +1007,23 @@ function renderActiveTree(c) {
   const hasTree = jsonTree.querySelector('details') !== null;
   expandAllBtn.style.display  = hasTree ? '' : 'none';
   collapseAllBtn.style.display = hasTree ? '' : 'none';
-
-  expandAllBtn.onclick = () => {
-    jsonTree.querySelectorAll('details').forEach(d => d.setAttribute('open', ''));
-  };
-  collapseAllBtn.onclick = () => {
-    jsonTree.querySelectorAll('details').forEach(d => d.removeAttribute('open'));
-  };
 }
 
 // ── JSON tree ──────────────────────────────────────────────────────────────
+const JSON_TREE_SIZE_LIMIT = 80_000; // chars — beyond this, tree render freezes the panel
+
 function renderJsonTree(raw) {
   if (!raw || !raw.trim()) {
     jsonTree.innerHTML = '<span class="empty">(empty)</span>';
+    return;
+  }
+  if (raw.length > JSON_TREE_SIZE_LIMIT) {
+    jsonTree.innerHTML =
+      `<div style="padding:6px 0;color:#6b7280;font-size:11px">` +
+      `Response too large to render as tree (${Math.round(raw.length / 1024)}KB — limit ${JSON_TREE_SIZE_LIMIT / 1024}KB).</div>` +
+      `<pre style="margin:0;color:#6b7280;font-size:11px;white-space:pre-wrap;overflow:auto;max-height:320px">${esc(raw.slice(0, 10000))}` +
+      (raw.length > 10000 ? `\n… [${Math.round((raw.length - 10000) / 1024)}KB more not shown]` : '') +
+      `</pre>`;
     return;
   }
   let parsed;
@@ -1039,6 +1086,7 @@ function renderMockPanel(c) {
     const body = existing ? existing.body : tryPretty(c.responseBody);
     setMockContent(body); // always keep tree state in sync
     currentMockCallId = String(c.id);
+    lastMockPanelState = ''; // force action-bar rebuild on call switch
     if (editorMode === 'codemirror') {
       ensureCmInitialized();
       cmSetValue(body);
@@ -1047,19 +1095,25 @@ function renderMockPanel(c) {
     }
   }
 
-  // Actions bar
+  // Actions bar — skip rebuild if mock existence/enabled state hasn't changed
+  const newMockState = `${key}:${!!existing}:${isEnabled}`;
+  if (newMockState === lastMockPanelState) return;
+  lastMockPanelState = newMockState;
+
   mockActionsEl.innerHTML = '';
   const saveBtn = makeBtn('primary', existing ? 'Update Mock' : 'Save as Mock', async () => {
     saveBtn.disabled = true;
-    await chrome.runtime.sendMessage({
-      type: 'SAVE_MOCK',
-      payload: {
-        method: c.method, url: c.url,
-        status: parseInt(mockStatusEl.value, 10) || 200,
-        body: getMockBody(),
-        enabled: true,
-      },
-    }, () => void chrome.runtime.lastError);
+    try {
+      await chrome.runtime.sendMessage({
+        type: 'SAVE_MOCK',
+        payload: {
+          method: c.method, url: c.url,
+          status: parseInt(mockStatusEl.value, 10) || 200,
+          body: getMockBody(),
+          enabled: true,
+        },
+      });
+    } catch { void chrome.runtime.lastError; }
     saveBtn.disabled = false;
   });
   mockActionsEl.appendChild(saveBtn);
@@ -1067,15 +1121,14 @@ function renderMockPanel(c) {
   if (existing) {
     const toggleBtn = makeBtn('', isEnabled ? 'Disable Mock' : 'Enable Mock', async () => {
       toggleBtn.disabled = true;
-      await chrome.runtime.sendMessage(
-        { type: 'TOGGLE_MOCK', key, enabled: !isEnabled },
-        () => void chrome.runtime.lastError
-      );
+      try {
+        await chrome.runtime.sendMessage({ type: 'TOGGLE_MOCK', key, enabled: !isEnabled });
+      } catch { void chrome.runtime.lastError; }
       toggleBtn.disabled = false;
     });
     const delBtn = makeBtn('danger', 'Delete Mock', async () => {
       if (!confirm(`Delete mock for ${c.method} ${c.url}?`)) return;
-      await chrome.runtime.sendMessage({ type: 'DELETE_MOCK', key }, () => void chrome.runtime.lastError);
+      try { await chrome.runtime.sendMessage({ type: 'DELETE_MOCK', key }); } catch { void chrome.runtime.lastError; }
     });
     mockActionsEl.appendChild(toggleBtn);
     mockActionsEl.appendChild(delBtn);
@@ -1132,6 +1185,43 @@ deleteAllBtn.addEventListener('click', () => {
   chrome.runtime.sendMessage({ type: 'DELETE_ALL_MOCKS' }, () => void chrome.runtime.lastError);
 });
 
+function buildMockCard(key, m) {
+  const card = document.createElement('div');
+  card.className = 'mock-card';
+  card.dataset.mockKey = key;
+  card.dataset.savedAt = String(m.savedAt);
+  card.innerHTML = `
+    <div class="mock-card-head">
+      <span class="cm ${esc(m.method)}">${esc(m.method)}</span>
+      <span class="mock-card-url" title="${esc(m.url)}">${esc(m.url)}</span>
+      <span class="badge">${m.status}</span>
+      <div class="switch ${m.enabled ? 'on' : ''}" data-key="${esc(key)}" title="${m.enabled ? 'Disable' : 'Enable'}"></div>
+      <button class="mock-chevron" data-key="${esc(key)}" title="View / edit mock body">›</button>
+    </div>
+    <div style="font-size:11px;color:#9ca3af;margin-top:4px">
+      Saved ${new Date(m.savedAt).toLocaleString()}
+      &nbsp;·&nbsp;
+      <a href="#" class="del-link" data-key="${esc(key)}" style="color:#b91c1c">delete</a>
+    </div>
+  `;
+  card.querySelector('.switch').addEventListener('click', e => {
+    const k = e.currentTarget.dataset.key;
+    chrome.runtime.sendMessage({ type: 'TOGGLE_MOCK', key: k, enabled: !m.enabled },
+      () => void chrome.runtime.lastError);
+  });
+  card.querySelector('.del-link').addEventListener('click', async e => {
+    e.preventDefault();
+    const k = e.target.dataset.key;
+    if (!confirm(`Delete mock for ${k}?`)) return;
+    try { await chrome.runtime.sendMessage({ type: 'DELETE_MOCK', key: k }); } catch { void chrome.runtime.lastError; }
+  });
+  card.querySelector('.mock-chevron').addEventListener('click', e => {
+    const k = e.currentTarget.dataset.key;
+    if (openMockKey === k) { closeMockDrawer(); } else { openMockDrawer(k); }
+  });
+  return card;
+}
+
 function renderMockList() {
   const mockListEl = document.getElementById('mockList');
   const keys = Object.keys(mocks);
@@ -1144,54 +1234,45 @@ function renderMockList() {
     return;
   }
 
-  mockListEl.innerHTML = '';
-  keys.forEach(key => {
-    const m = mocks[key];
-    const card = document.createElement('div');
-    card.className = 'mock-card';
-    card.dataset.mockKey = key;
-    card.innerHTML = `
-      <div class="mock-card-head">
-        <span class="cm ${esc(m.method)}">${esc(m.method)}</span>
-        <span class="mock-card-url" title="${esc(m.url)}">${esc(m.url)}</span>
-        <span class="badge">${m.status}</span>
-        <div class="switch ${m.enabled ? 'on' : ''}" data-key="${esc(key)}" title="${m.enabled ? 'Disable' : 'Enable'}"></div>
-        <button class="mock-chevron" data-key="${esc(key)}" title="View / edit mock body">›</button>
-      </div>
-      <div style="font-size:11px;color:#9ca3af;margin-top:4px">
-        Saved ${new Date(m.savedAt).toLocaleString()}
-        &nbsp;·&nbsp;
-        <a href="#" class="del-link" data-key="${esc(key)}" style="color:#b91c1c">delete</a>
-      </div>
-    `;
-    card.querySelector('.switch').addEventListener('click', e => {
-      const k = e.currentTarget.dataset.key;
-      chrome.runtime.sendMessage({ type: 'TOGGLE_MOCK', key: k, enabled: !m.enabled },
-        () => void chrome.runtime.lastError);
-    });
-    card.querySelector('.del-link').addEventListener('click', async e => {
-      e.preventDefault();
-      const k = e.target.dataset.key;
-      if (!confirm(`Delete mock for ${k}?`)) return;
-      await chrome.runtime.sendMessage({ type: 'DELETE_MOCK', key: k },
-        () => void chrome.runtime.lastError);
-    });
-    card.querySelector('.mock-chevron').addEventListener('click', e => {
-      const k = e.currentTarget.dataset.key;
-      if (openMockKey === k) { closeMockDrawer(); } else { openMockDrawer(k); }
-    });
-    mockListEl.appendChild(card);
+  // Build a Map of existing cards in one pass, removing stale ones along the way
+  const cardMap = new Map();
+  mockListEl.querySelectorAll('[data-mock-key]').forEach(card => {
+    const k = card.dataset.mockKey;
+    if (!mocks[k]) { card.remove(); } else { cardMap.set(k, card); }
   });
 
-  // Re-attach drawer if a key was open (preserves unsaved edits across re-renders)
+  // Update existing cards or insert new ones — O(1) lookup via cardMap
+  keys.forEach(key => {
+    const m = mocks[key];
+    const existing = cardMap.get(key);
+    if (existing) {
+      if (existing.dataset.savedAt !== String(m.savedAt)) {
+        // Mock body/status changed — replace the whole card so badge and timestamp stay fresh
+        const newCard = buildMockCard(key, m);
+        mockListEl.replaceChild(newCard, existing);
+        cardMap.set(key, newCard);
+      } else {
+        // Toggle-only update — patch the switch in-place
+        const sw = existing.querySelector('.switch');
+        if (sw) {
+          sw.className = `switch${m.enabled ? ' on' : ''}`;
+          sw.title = m.enabled ? 'Disable' : 'Enable';
+        }
+      }
+    } else {
+      mockListEl.appendChild(buildMockCard(key, m));
+    }
+  });
+
+  // Re-attach drawer if a key was open (preserves unsaved edits across updates)
   if (openMockKey && mocks[openMockKey] && drawerEl) {
-    const card = mockListEl.querySelector(`[data-mock-key="${CSS.escape(openMockKey)}"]`);
+    const card = cardMap.get(openMockKey) ?? mockListEl.querySelector(`[data-mock-key="${CSS.escape(openMockKey)}"]`);
     if (card) {
       card.querySelector('.mock-chevron').classList.add('open');
-      card.appendChild(drawerEl);
+      if (!drawerEl.parentElement) card.appendChild(drawerEl);
     }
   } else if (openMockKey && !mocks[openMockKey]) {
-    openMockKey = null; // mock was deleted
+    openMockKey = null;
   }
 }
 

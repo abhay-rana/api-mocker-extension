@@ -37,9 +37,14 @@ Two content script worlds must stay separate:
 ## Key Constraints & Gotchas
 
 - **MV3 `webRequest` is read-only** — cannot rewrite response bodies declaratively. All interception happens by monkey-patching in MAIN world.
-- **`chrome.runtime.sendMessage` must consume `lastError`** — always use `() => void chrome.runtime.lastError` as callback, or Chrome logs uncaught errors when SW is idle.
+- **`chrome.runtime.sendMessage` and `lastError`** — two valid patterns, never mix them:
+  - Fire-and-forget: `sendMessage({...}, () => void chrome.runtime.lastError)` — callback consumes lastError.
+  - Awaited: `try { await sendMessage({...}); } catch { void chrome.runtime.lastError; }` — Promise form, no callback. **Never `await sendMessage({...}, callback)` — passing a callback makes it return `undefined`, so `await` resolves instantly and the re-enable/post-send logic runs before the response.**
 - **Panel uses a port, not sendMessage** — avoids the 5-min service worker idle timeout dropping the connection.
+- **Mock mutations in background.js must go through `commitMocks(mocks)`** — it sequences `saveMocks` then `broadcastMocks`. Never call them separately or broadcast can be silently skipped.
 - **Never fully re-render the detail pane on `MOCKS_UPDATED`** — it destroys the textarea and wipes the undo stack. Only reset editor value when `dataset.callId` changes (different call selected).
+- **`renderMockList` is incremental** — it diffs against existing cards via a `Map` built from one `querySelectorAll` pass. Cards are patched (toggle-only) or replaced (when `dataset.savedAt` changes). Do not revert it to `innerHTML = ''` wipe-and-rebuild.
+- **JSON tree has an 80 KB size guard** (`JSON_TREE_SIZE_LIMIT`) — responses above this render as a truncated `<pre>` instead of calling `buildTree`, which would freeze the panel on large payloads.
 - **DevTools captures Ctrl+Z** before it reaches the textarea — native browser undo does not work. Custom undo stack is managed in `panel.js` (`undoStack[]`, `undoPtr`). Snapshots debounced at 600ms of typing. Format and ↩ Original both push snapshots before and after their bulk change so they are undoable.
 - **Mocks pushed on `READY`** — when a page loads, `inject-main` posts `READY`, bridge fetches current mocks from background and pushes them to MAIN world before any requests fire.
 

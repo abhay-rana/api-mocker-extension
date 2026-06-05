@@ -17,6 +17,10 @@ async function loadMocks() {
 async function saveMocks(mocks) {
   await chrome.storage.local.set({ [STORAGE_KEY]: mocks });
 }
+async function commitMocks(mocks) {
+  await saveMocks(mocks);
+  await broadcastMocks(mocks);
+}
 
 async function loadDomains() {
   const r = await chrome.storage.local.get(DOMAINS_KEY);
@@ -57,17 +61,17 @@ function makeIconImageData(size, color) {
   return ctx.getImageData(0, 0, size, size);
 }
 
-function setTabIcon(tabId, enabled) {
+async function setTabIcon(tabId, enabled) {
   const color = enabled ? '#22c55e' : '#9ca3af';
   try {
-    chrome.action.setIcon({
+    await chrome.action.setIcon({
       tabId,
       imageData: {
         16: makeIconImageData(16, color),
         32: makeIconImageData(32, color),
       },
     });
-  } catch {}
+  } catch (err) { console.warn('[API Mocker] setTabIcon failed:', err); }
 }
 
 async function refreshTabIcon(tabId) {
@@ -77,7 +81,7 @@ async function refreshTabIcon(tabId) {
     const domain = getDomainFromUrl(tab.url);
     const enabled = domain ? await isDomainEnabled(domain) : false;
     setTabIcon(tabId, enabled);
-  } catch {}
+  } catch (err) { console.warn('[API Mocker] refreshTabIcon:', err); }
 }
 
 // ── Broadcast helpers ────────────────────────────────────────────────────────
@@ -176,8 +180,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         body: m.body ?? '',
         savedAt: Date.now(),
       };
-      await saveMocks(mocks);
-      broadcastMocks(mocks);
+      await commitMocks(mocks);
       sendResponse({ ok: true, key });
       return;
     }
@@ -186,8 +189,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       const mocks = await loadMocks();
       if (mocks[msg.key]) {
         mocks[msg.key].enabled = !!msg.enabled;
-        await saveMocks(mocks);
-        broadcastMocks(mocks);
+        await commitMocks(mocks);
       }
       sendResponse({ ok: true });
       return;
@@ -196,8 +198,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     if (msg.type === 'DELETE_MOCK') {
       const mocks = await loadMocks();
       delete mocks[msg.key];
-      await saveMocks(mocks);
-      broadcastMocks(mocks);
+      await commitMocks(mocks);
       sendResponse({ ok: true });
       return;
     }
@@ -205,8 +206,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     if (msg.type === 'ENABLE_ALL_MOCKS') {
       const mocks = await loadMocks();
       for (const k of Object.keys(mocks)) mocks[k].enabled = true;
-      await saveMocks(mocks);
-      broadcastMocks(mocks);
+      await commitMocks(mocks);
       sendResponse({ ok: true });
       return;
     }
@@ -214,15 +214,13 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     if (msg.type === 'DISABLE_ALL_MOCKS') {
       const mocks = await loadMocks();
       for (const k of Object.keys(mocks)) mocks[k].enabled = false;
-      await saveMocks(mocks);
-      broadcastMocks(mocks);
+      await commitMocks(mocks);
       sendResponse({ ok: true });
       return;
     }
 
     if (msg.type === 'DELETE_ALL_MOCKS') {
-      await saveMocks({});
-      broadcastMocks({});
+      await commitMocks({});
       sendResponse({ ok: true });
       return;
     }
