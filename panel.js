@@ -419,7 +419,6 @@ const detailEmpty     = document.getElementById('detailEmpty');
 const detailContent   = document.getElementById('detailContent');
 const detailHeader    = document.getElementById('detailHeader');
 const jsonTree        = document.getElementById('jsonTree');
-const mockColTitle    = document.getElementById('mockColTitle');
 const mockActiveBadge = document.getElementById('mockActiveBadge');
 const mockStatusEl    = document.getElementById('mockStatus');
 const mockActionsEl   = document.getElementById('mockActions');
@@ -924,6 +923,20 @@ document.querySelectorAll('.tab').forEach(btn => {
   });
 });
 
+// ── Mock-col tabs (Mock Response / Throttle / Block) ─────────────────────
+document.querySelectorAll('.mock-tab[data-mock-tab]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.mock-tab[data-mock-tab]').forEach(b => b.classList.remove('mock-tab--active'));
+    btn.classList.add('mock-tab--active');
+    const tab = btn.dataset.mockTab;
+    document.getElementById('mockPanelResponse').classList.toggle('mock-panel--hidden', tab !== 'mock-response');
+    document.getElementById('mockPanelThrottle').classList.toggle('mock-panel--hidden', tab !== 'throttle');
+    document.getElementById('mockPanelBlock').classList.toggle('mock-panel--hidden', tab !== 'block');
+    const resetBtn = document.getElementById('resetOrigBtn');
+    if (resetBtn) resetBtn.style.display = tab === 'mock-response' ? '' : 'none';
+  });
+});
+
 // ── Response sub-tabs (Response / Request) ────────────────────────────────
 document.querySelectorAll('.resp-tab[data-body-tab]').forEach(btn => {
   btn.addEventListener('click', () => {
@@ -1243,7 +1256,6 @@ function renderMockPanel(c) {
   const existing = mocks[key];
   const isEnabled = existing && existing.enabled;
 
-  mockColTitle.textContent = 'Mock Response';
   if (mockActiveBadge) {
     mockActiveBadge.classList.toggle('hidden', !isEnabled);
   }

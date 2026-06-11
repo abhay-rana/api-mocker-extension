@@ -170,63 +170,189 @@
           <!-- Mock editor column -->
           <div class="mock-col" id="mockCol">
 
-            <!-- Header -->
-            <div class="mock-header-bar">
-              <span class="mock-col-title" id="mockColTitle">Mock Response</span>
+            <!-- Tab navigation -->
+            <div class="mock-tabs-bar">
+              <button class="mock-tab mock-tab--active" data-mock-tab="mock-response">Mock Response</button>
+              <button class="mock-tab" data-mock-tab="throttle">Throttle</button>
+              <button class="mock-tab mock-tab--block" data-mock-tab="block">Block</button>
               <span class="mock-active-badge hidden" id="mockActiveBadge">● ACTIVE</span>
               <div class="mock-header-spacer"></div>
               <button class="tiny-btn" id="resetOrigBtn" title="Reset to actual response body">↩ Original</button>
             </div>
 
-            <!-- Fields -->
-            <div class="mock-fields-bar" id="mockFieldsBar">
-              <div class="mock-field">
-                <span class="field-label">Status</span>
-                <input type="number" id="mockStatus" value="200" min="100" max="599" class="field-input" />
+            <!-- ── Mock Response panel ── -->
+            <div class="mock-panel" id="mockPanelResponse">
+
+              <!-- Fields -->
+              <div class="mock-fields-bar" id="mockFieldsBar">
+                <div class="mock-field">
+                  <span class="field-label">Status</span>
+                  <input type="number" id="mockStatus" value="200" min="100" max="599" class="field-input" />
+                </div>
+                <div class="mock-field">
+                  <span class="field-label">Content-Type</span>
+                  <input type="text" id="mockContentType" value="application/json" class="field-input field-input--wide" />
+                </div>
+                <div class="mock-field">
+                  <span class="field-label">Delay (ms)</span>
+                  <input type="number" id="mockDelay" value="0" min="0" class="field-input" />
+                </div>
               </div>
-              <div class="mock-field">
-                <span class="field-label">Content-Type</span>
-                <input type="text" id="mockContentType" value="application/json" class="field-input field-input--wide" />
+
+              <!-- Body bar -->
+              <div class="mock-body-bar">
+                <span class="section-label">RESPONSE BODY</span>
+                <div class="mock-body-spacer"></div>
+                <button id="mockTreeSearchBtn" class="search-icon-btn" title="Search (Ctrl+F)">
+                  <svg width="11" height="11" viewBox="0 0 14 14" fill="none">
+                    <circle cx="5.5" cy="5.5" r="4" stroke="currentColor" stroke-width="1.5"/>
+                    <path d="M9 9l3.5 3.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+                  </svg>
+                </button>
+                <select id="editorModeSelect" class="mode-select" title="Switch editor style">
+                  <option value="tree">Tree</option>
+                  <option value="codemirror">Editor</option>
+                </select>
+                <button class="tiny-btn" id="mockExpandAllBtn" style="display:none">Expand all</button>
+                <button class="tiny-btn" id="mockCollapseAllBtn" style="display:none">Collapse all</button>
               </div>
-              <div class="mock-field">
-                <span class="field-label">Delay (ms)</span>
-                <input type="number" id="mockDelay" value="0" min="0" class="field-input" />
+
+              <!-- Tree search -->
+              <div id="mockTreeSearch" class="tree-search-panel" style="display:none">
+                <input type="text" id="mockTreeSearchInput" placeholder="Search keys and values…" />
+                <span id="mockTreeSearchCount" class="search-count"></span>
+                <button id="mockTreeSearchPrev" class="search-nav" title="Previous (Shift+Enter)">↑</button>
+                <button id="mockTreeSearchNext" class="search-nav" title="Next (Enter)">↓</button>
+                <button id="mockTreeSearchClose" class="search-close" title="Close (Esc)">✕</button>
               </div>
-            </div>
 
-            <!-- Body bar -->
-            <div class="mock-body-bar">
-              <span class="section-label">RESPONSE BODY</span>
-              <div class="mock-body-spacer"></div>
-              <button id="mockTreeSearchBtn" class="search-icon-btn" title="Search (Ctrl+F)">
-                <svg width="11" height="11" viewBox="0 0 14 14" fill="none">
-                  <circle cx="5.5" cy="5.5" r="4" stroke="currentColor" stroke-width="1.5"/>
-                  <path d="M9 9l3.5 3.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
-                </svg>
-              </button>
-              <select id="editorModeSelect" class="mode-select" title="Switch editor style">
-                <option value="tree">Tree</option>
-                <option value="codemirror">Editor</option>
-              </select>
-              <button class="tiny-btn" id="mockExpandAllBtn" style="display:none">Expand all</button>
-              <button class="tiny-btn" id="mockCollapseAllBtn" style="display:none">Collapse all</button>
-            </div>
+              <div class="tree-wrap" id="mockTree"></div>
+              <div id="cmEditorWrap" class="cm-editor-wrap" style="display:none"></div>
 
-            <!-- Tree search -->
-            <div id="mockTreeSearch" class="tree-search-panel" style="display:none">
-              <input type="text" id="mockTreeSearchInput" placeholder="Search keys and values…" />
-              <span id="mockTreeSearchCount" class="search-count"></span>
-              <button id="mockTreeSearchPrev" class="search-nav" title="Previous (Shift+Enter)">↑</button>
-              <button id="mockTreeSearchNext" class="search-nav" title="Next (Enter)">↓</button>
-              <button id="mockTreeSearchClose" class="search-close" title="Close (Esc)">✕</button>
-            </div>
+              <div id="jsonError" class="json-error hidden">⚠ Invalid JSON — saved as plain text</div>
 
-            <div class="tree-wrap" id="mockTree"></div>
-            <div id="cmEditorWrap" class="cm-editor-wrap" style="display:none"></div>
+              <div class="mock-actions" id="mockActions"></div>
+            </div><!-- /mockPanelResponse -->
 
-            <div id="jsonError" class="json-error hidden">⚠ Invalid JSON — saved as plain text</div>
+            <!-- ── Throttle panel ── -->
+            <div class="mock-panel mock-panel--hidden" id="mockPanelThrottle">
 
-            <div class="mock-actions" id="mockActions"></div>
+              <div class="rule-toggle-row">
+                <div class="rule-toggle-info">
+                  <span class="rule-toggle-title">Enable throttle</span>
+                  <span class="rule-toggle-desc">Add artificial network delay to this request</span>
+                </div>
+                <button class="switch" id="throttleToggle"></button>
+              </div>
+
+              <div class="rule-section">
+                <div class="rule-section-label">DELAY PRESET</div>
+                <div class="preset-btn-group">
+                  <button class="preset-btn">Offline</button>
+                  <button class="preset-btn">3G</button>
+                  <button class="preset-btn preset-btn--active">Fast 3G</button>
+                  <button class="preset-btn">4G</button>
+                  <button class="preset-btn">Custom</button>
+                </div>
+              </div>
+
+              <div class="rule-section">
+                <div class="rule-section-label">CUSTOM DELAY</div>
+                <div class="rule-field-row">
+                  <input type="number" class="field-input" id="throttleDelayInput" value="1600" min="0" />
+                  <span class="rule-field-unit">ms</span>
+                </div>
+              </div>
+
+              <div class="rule-section">
+                <div class="rule-section-label">REPEAT</div>
+                <div class="preset-btn-group">
+                  <button class="preset-btn">None</button>
+                  <button class="preset-btn preset-btn--active">Always</button>
+                  <button class="preset-btn">×1</button>
+                  <button class="preset-btn">×5</button>
+                </div>
+              </div>
+
+              <div class="mock-actions">
+                <button class="btn primary" id="saveThrottleBtn">Save Throttle Rule</button>
+                <div class="actions-flex-spacer"></div>
+                <button class="btn danger" id="removeThrottleBtn">Remove</button>
+              </div>
+            </div><!-- /mockPanelThrottle -->
+
+            <!-- ── Block panel ── -->
+            <div class="mock-panel mock-panel--hidden" id="mockPanelBlock">
+
+              <div class="rule-toggle-row rule-toggle-row--block">
+                <div class="rule-toggle-info">
+                  <span class="rule-toggle-title">Enable block</span>
+                  <span class="rule-toggle-desc">Block all requests matching this endpoint</span>
+                </div>
+                <button class="switch" id="blockToggle"></button>
+              </div>
+
+              <div class="rule-section rule-section--radio">
+
+                <label class="rule-radio-row">
+                  <input type="radio" name="blockMode" value="abort" checked />
+                  <div class="rule-radio-body">
+                    <span class="rule-radio-title">Abort connection</span>
+                    <span class="rule-radio-desc">Simulate a dropped connection — request fails with a network error</span>
+                  </div>
+                </label>
+
+                <label class="rule-radio-row">
+                  <input type="radio" name="blockMode" value="error-status" />
+                  <div class="rule-radio-body">
+                    <span class="rule-radio-title">Return error status</span>
+                    <span class="rule-radio-desc">Respond with chosen HTTP error status code</span>
+                  </div>
+                </label>
+                <div class="rule-sub-row">
+                  <span class="field-label">HTTP Status Code</span>
+                  <div class="preset-btn-group">
+                    <button class="preset-btn">400</button>
+                    <button class="preset-btn preset-btn--active">404</button>
+                    <button class="preset-btn">500</button>
+                    <button class="preset-btn">503</button>
+                  </div>
+                </div>
+
+                <label class="rule-radio-row">
+                  <input type="radio" name="blockMode" value="empty" />
+                  <div class="rule-radio-body">
+                    <span class="rule-radio-title">Return empty response</span>
+                    <span class="rule-radio-desc">Respond with an empty body and given status code</span>
+                  </div>
+                </label>
+                <div class="rule-sub-row">
+                  <span class="field-label">HTTP Status Code</span>
+                  <div class="preset-btn-group">
+                    <button class="preset-btn preset-btn--active">200</button>
+                    <button class="preset-btn">204</button>
+                  </div>
+                </div>
+
+              </div>
+
+              <div class="rule-section">
+                <div class="rule-section-label">REPEAT</div>
+                <div class="preset-btn-group">
+                  <button class="preset-btn">None</button>
+                  <button class="preset-btn preset-btn--active">Always</button>
+                  <button class="preset-btn">×1</button>
+                  <button class="preset-btn">×5</button>
+                </div>
+              </div>
+
+              <div class="mock-actions">
+                <button class="btn btn--block-save" id="saveBlockBtn">Save Block Rule</button>
+                <div class="actions-flex-spacer"></div>
+                <button class="btn danger" id="removeBlockBtn">Remove</button>
+              </div>
+            </div><!-- /mockPanelBlock -->
+
           </div>
 
         </div><!-- /detailContent -->
