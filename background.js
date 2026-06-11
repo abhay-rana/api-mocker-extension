@@ -228,6 +228,49 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   return true;
 });
 
+// ── Content script injection ─────────────────────────────────────────────────
+
+async function ensureContentScriptsInjected(tabId) {
+  try {
+    const tab = await chrome.tabs.get(tabId);
+    if (!tab || !tab.url || !tab.url.startsWith('http')) return;
+
+    // Check whether inject-main.js is already running in the MAIN world.
+    const [mainProbe] = await chrome.scripting.executeScript({
+      target: { tabId },
+      world: 'MAIN',
+      func: () => !!window.__API_MOCKER_INSTALLED__,
+    });
+    const mainRunning = mainProbe?.result === true;
+
+    if (!mainRunning) {
+      // Tab was loaded before extension was active — inject both scripts fresh.
+      // ISOLATED first so the message listener is ready before MAIN posts READY.
+      await chrome.scripting.executeScript({
+        target: { tabId },
+        world: 'ISOLATED',
+        files: ['content-bridge.js'],
+      });
+      await chrome.scripting.executeScript({
+        target: { tabId },
+        world: 'MAIN',
+        files: ['inject-main.js'],
+      });
+    } else {
+      // inject-main is already patching fetch/XHR.
+      // Send WAKE so it re-posts READY, which re-triggers the domain-check
+      // handshake in content-bridge (handles stale active state after SW restart).
+      await chrome.scripting.executeScript({
+        target: { tabId },
+        world: 'ISOLATED',
+        func: () => window.postMessage({ source: 'api-mocker-bridge', type: 'WAKE' }, '*'),
+      });
+    }
+  } catch (err) {
+    console.warn('[API Mocker] ensureContentScriptsInjected:', err);
+  }
+}
+
 // ── Panel port ───────────────────────────────────────────────────────────────
 
 chrome.runtime.onConnect.addListener((port) => {
@@ -236,7 +279,7 @@ chrome.runtime.onConnect.addListener((port) => {
   panelPorts.set(tabId, port);
 
   const log = callLog.get(tabId) || [];
-  port.postMessage({ type: 'INIT_LOG', payload: log });
+  port.postMessage({ type: 'INIT_LOG', payload: log, reason: 'reconnect' });
   loadMocks().then((mocks) => port.postMessage({ type: 'MOCKS_UPDATED', payload: mocks }));
 
   // Send domain status for this tab.
@@ -248,10 +291,14 @@ chrome.runtime.onConnect.addListener((port) => {
     try { port.postMessage({ type: 'DOMAIN_STATUS', domain, enabled }); } catch {}
   }).catch(() => {});
 
+  // Ensure content scripts are running — handles tabs loaded before extension was active.
+  ensureContentScriptsInjected(tabId);
+
   port.onMessage.addListener(async (msg) => {
+    if (msg.type === 'PING') return; // keeps SW alive
     if (msg.type === 'CLEAR_LOG') {
       callLog.set(tabId, []);
-      port.postMessage({ type: 'INIT_LOG', payload: [] });
+      port.postMessage({ type: 'INIT_LOG', payload: [], reason: 'clear' });
     }
   });
 
@@ -267,7 +314,7 @@ chrome.webNavigation?.onCommitted.addListener((details) => {
     callLog.set(details.tabId, []);
     const port = panelPorts.get(details.tabId);
     if (port) {
-      try { port.postMessage({ type: 'INIT_LOG', payload: [] }); } catch {}
+      try { port.postMessage({ type: 'INIT_LOG', payload: [], reason: 'navigation' }); } catch {}
     }
     refreshTabIcon(details.tabId);
   }

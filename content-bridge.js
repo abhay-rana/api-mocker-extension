@@ -1,6 +1,9 @@
 // Runs in ISOLATED world. Bridges page <-> service worker.
 // Checks domain enable status before activating interception.
 (() => {
+  if (window.__API_MOCKER_BRIDGE__) return;
+  window.__API_MOCKER_BRIDGE__ = true;
+
   const TAG_OUT = 'api-mocker-bridge';
   const TAG_IN = 'api-mocker-main';
 

@@ -1,6 +1,64 @@
+// ── Diagnostic log ─────────────────────────────────────────────────────────
+const diagLog = [];
+const MAX_DIAG = 50;
+function addDiag(msg) {
+  const now = new Date();
+  const time = now.toLocaleTimeString('en-GB', { hour12: false }) +
+    '.' + String(now.getMilliseconds()).padStart(3, '0');
+  diagLog.push({ time, msg });
+  if (diagLog.length > MAX_DIAG) diagLog.shift();
+}
+
 // ── Connection ─────────────────────────────────────────────────────────────
 const tabId = chrome.devtools.inspectedWindow.tabId;
-const port  = chrome.runtime.connect({ name: `panel:${tabId}` });
+let port;
+
+function connectPort() {
+  port = chrome.runtime.connect({ name: `panel:${tabId}` });
+  port.onMessage.addListener(onPortMessage);
+
+  // Keep SW alive — MV3 kills idle SWs after 30s; ping every 25s to reset the timer.
+  const keepAlive = setInterval(() => {
+    try { port.postMessage({ type: 'PING' }); } catch { clearInterval(keepAlive); }
+  }, 25_000);
+
+  port.onDisconnect.addListener(() => {
+    clearInterval(keepAlive);
+    addDiag('SW disconnected — reconnecting…');
+    setTimeout(connectPort, 150);
+  });
+  addDiag('Port connected to SW');
+}
+
+function onPortMessage(msg) {
+  if (!msg) return;
+  if (msg.type === 'INIT_LOG') {
+    const prevCount = calls.length;
+    const reason = msg.reason || 'unknown';
+    const reasonLabel = reason === 'navigation' ? 'page navigation'
+      : reason === 'reconnect' ? 'SW reconnect'
+      : reason === 'clear' ? 'Clear button'
+      : reason;
+    addDiag(`Log cleared — ${reasonLabel} (had ${prevCount} call${prevCount !== 1 ? 's' : ''})`);
+    calls = msg.payload || [];
+    selectedCall = null;
+    renderCallList();
+    showEmptyDetail();
+  } else if (msg.type === 'CALL') {
+    if (!isRecording) return;
+    calls.push(msg.payload);
+    appendSingleCall(msg.payload);
+  } else if (msg.type === 'MOCKS_UPDATED') {
+    mocks = msg.payload || {};
+    mockCountEl.textContent = Object.keys(mocks).length;
+    renderMockList();
+    if (selectedCall) renderMockPanel(selectedCall);
+  } else if (msg.type === 'DOMAIN_STATUS') {
+    setDomainEnabled(msg.domain, msg.enabled);
+  }
+}
+
+connectPort();
 
 // ── State ──────────────────────────────────────────────────────────────────
 let calls = [];
@@ -11,6 +69,7 @@ let filterText = '';
 let currentPanelDomain = '';
 let activeBodyTab = 'response'; // 'response' | 'request'
 let lastMockPanelState = ''; // serialized key to skip redundant action-bar rebuilds
+let isRecording = true;
 
 // ── Disabled overlay ────────────────────────────────────────────────────────
 const disabledOverlay = document.getElementById('disabledOverlay');
@@ -20,6 +79,7 @@ const overlayEnableBtn = document.getElementById('overlayEnableBtn');
 function setDomainEnabled(domain, enabled) {
   currentPanelDomain = domain;
   overlayDomain.textContent = domain;
+  if (domainPillText) domainPillText.textContent = domain || '—';
   if (enabled) {
     disabledOverlay.classList.add('hidden');
   } else {
@@ -166,13 +226,13 @@ function initCodeMirror() {
   } = window.CM;
 
   const jsonHighlight = HighlightStyle.define([
-    { tag: tags.propertyName,  color: '#7c3aed' },
-    { tag: tags.string,        color: '#047857' },
-    { tag: tags.number,        color: '#1d4ed8' },
-    { tag: tags.bool,          color: '#b45309' },
-    { tag: tags.null,          color: '#b91c1c' },
-    { tag: tags.punctuation,   color: '#374151' },
-    { tag: tags.bracket,       color: '#374151', fontWeight: 'bold' },
+    { tag: tags.propertyName,  color: '#2563EB' },
+    { tag: tags.string,        color: '#16A34A' },
+    { tag: tags.number,        color: '#EA580C' },
+    { tag: tags.bool,          color: '#9333EA' },
+    { tag: tags.null,          color: '#EF4444' },
+    { tag: tags.punctuation,   color: '#0F172A' },
+    { tag: tags.bracket,       color: '#0F172A', fontWeight: 'bold' },
   ]);
 
   cmEditor = new EditorView({
@@ -207,24 +267,24 @@ function initCodeMirror() {
           }},
         ]),
         EditorView.theme({
-          '&': { height: '100%', background: '#f8f9ff', fontSize: '12px' },
-          '.cm-scroller': { overflow: 'auto', fontFamily: 'ui-monospace, Consolas, "Courier New", monospace', lineHeight: '1.6' },
-          '.cm-content': { padding: '8px 0', caretColor: '#111827' },
-          '.cm-gutters': { background: '#f0f0f8', border: 'none', borderRight: '1px solid #e5e7eb' },
-          '.cm-lineNumbers .cm-gutterElement': { color: '#9ca3af', minWidth: '28px', padding: '0 6px 0 4px' },
-          '.cm-foldGutter .cm-gutterElement': { color: '#9ca3af', padding: '0 4px', cursor: 'pointer' },
-          '.cm-activeLine': { background: 'rgba(79,70,229,0.04)' },
-          '.cm-activeLineGutter': { background: 'rgba(79,70,229,0.04)' },
-          '.cm-matchingBracket': { background: 'rgba(79,70,229,0.15)', borderRadius: '2px', outline: 'none' },
-          '.cm-selectionBackground, &.cm-focused .cm-selectionBackground': { background: 'rgba(79,70,229,0.2)' },
-          '.cm-cursor': { borderLeftColor: '#111827' },
+          '&': { height: '100%', background: '#FFFFFF', fontSize: '11px' },
+          '.cm-scroller': { overflow: 'auto', fontFamily: "'Roboto Mono', ui-monospace, Consolas, monospace", lineHeight: '1.6' },
+          '.cm-content': { padding: '10px 0', caretColor: '#0F172A' },
+          '.cm-gutters': { background: '#F8FAFC', border: 'none', borderRight: '1px solid #E2E8F0' },
+          '.cm-lineNumbers .cm-gutterElement': { color: '#94A3B8', minWidth: '32px', padding: '0 8px 0 4px' },
+          '.cm-foldGutter .cm-gutterElement': { color: '#94A3B8', padding: '0 4px', cursor: 'pointer' },
+          '.cm-activeLine': { background: 'rgba(59,130,246,0.04)' },
+          '.cm-activeLineGutter': { background: 'rgba(59,130,246,0.04)' },
+          '.cm-matchingBracket': { background: 'rgba(59,130,246,0.15)', borderRadius: '2px', outline: 'none' },
+          '.cm-selectionBackground, &.cm-focused .cm-selectionBackground': { background: 'rgba(59,130,246,0.15)' },
+          '.cm-cursor': { borderLeftColor: '#0F172A' },
           '.cm-searchMatch': { background: 'rgba(253,224,71,0.5)', borderRadius: '2px' },
           '.cm-searchMatch.cm-searchMatch-selected': { background: 'rgba(251,146,60,0.5)' },
-          '.cm-panels': { background: '#f0f0f8', borderBottom: '1px solid #e5e7eb' },
-          '.cm-panel.cm-search': { padding: '4px 8px', fontSize: '11px', fontFamily: 'ui-monospace, Consolas, monospace' },
-          '.cm-panel.cm-search input': { border: '1px solid #d1d5db', borderRadius: '3px', padding: '2px 5px', fontSize: '11px' },
-          '.cm-panel.cm-search button': { padding: '2px 7px', border: '1px solid #d1d5db', borderRadius: '3px', background: '#fff', fontSize: '11px', cursor: 'pointer', marginLeft: '4px' },
-          '.cm-foldPlaceholder': { background: '#e0d9f7', border: '1px solid #c4b5fd', color: '#5b21b6', borderRadius: '3px', padding: '0 4px', cursor: 'pointer' },
+          '.cm-panels': { background: '#F8FAFC', borderBottom: '1px solid #E2E8F0' },
+          '.cm-panel.cm-search': { padding: '4px 8px', fontSize: '11px', fontFamily: "'Roboto Mono', ui-monospace, monospace" },
+          '.cm-panel.cm-search input': { border: '1px solid #E2E8F0', borderRadius: '3px', padding: '2px 5px', fontSize: '11px' },
+          '.cm-panel.cm-search button': { padding: '2px 7px', border: '1px solid #E2E8F0', borderRadius: '3px', background: '#F1F5F9', fontSize: '11px', cursor: 'pointer', marginLeft: '4px' },
+          '.cm-foldPlaceholder': { background: '#DBEAFE', border: '1px solid #93C5FD', color: '#1D4ED8', borderRadius: '3px', padding: '0 4px', cursor: 'pointer' },
         }),
       ],
     }),
@@ -353,24 +413,61 @@ function clearTreeHighlights() {
 }
 
 // ── DOM ────────────────────────────────────────────────────────────────────
-const callListEl    = document.getElementById('callList');
-const callListCol   = document.getElementById('callListCol');
-const detailEmpty   = document.getElementById('detailEmpty');
-const detailContent = document.getElementById('detailContent');
-const detailHeader  = document.getElementById('detailHeader');
-const jsonTree      = document.getElementById('jsonTree');
-const mockColTitle  = document.getElementById('mockColTitle');
-const mockStatusEl  = document.getElementById('mockStatus');
-const mockActionsEl = document.getElementById('mockActions');
-const jsonErrorEl   = document.getElementById('jsonError');
-const callCountEl   = document.getElementById('callCount');
-const mockCountEl   = document.getElementById('mockCount');
-const filterInput   = document.getElementById('filterInput');
-const resetOrigBtn  = document.getElementById('resetOrigBtn');
-const enableAllBtn  = document.getElementById('enableAllBtn');
-const disableAllBtn = document.getElementById('disableAllBtn');
-const deleteAllBtn  = document.getElementById('deleteAllBtn');
-const sortToggleBtn = document.getElementById('sortToggleBtn');
+const callListEl      = document.getElementById('callList');
+const callListCol     = document.getElementById('callListCol');
+const detailEmpty     = document.getElementById('detailEmpty');
+const detailContent   = document.getElementById('detailContent');
+const detailHeader    = document.getElementById('detailHeader');
+const jsonTree        = document.getElementById('jsonTree');
+const mockColTitle    = document.getElementById('mockColTitle');
+const mockActiveBadge = document.getElementById('mockActiveBadge');
+const mockStatusEl    = document.getElementById('mockStatus');
+const mockActionsEl   = document.getElementById('mockActions');
+const jsonErrorEl     = document.getElementById('jsonError');
+const callCountEl     = document.getElementById('callCount');
+const mockCountEl     = document.getElementById('mockCount');
+const filterInput     = document.getElementById('filterInput');
+const resetOrigBtn    = document.getElementById('resetOrigBtn');
+const enableAllBtn    = document.getElementById('enableAllBtn');
+const disableAllBtn   = document.getElementById('disableAllBtn');
+const deleteAllBtn    = document.getElementById('deleteAllBtn');
+const sortToggleBtn   = document.getElementById('sortToggleBtn');
+const domainPillText  = document.getElementById('domainPillText');
+
+// ── Diagnostic overlay ─────────────────────────────────────────────────────
+const diagOverlay  = document.getElementById('diagOverlay');
+const diagList     = document.getElementById('diagList');
+const diagBtn      = document.getElementById('diagBtn');
+const diagCloseBtn = document.getElementById('diagCloseBtn');
+const diagClearBtn = document.getElementById('diagClearBtn');
+
+function renderDiagLog() {
+  if (!diagLog.length) {
+    diagList.innerHTML = '<span class="diag-empty">No events yet.</span>';
+    return;
+  }
+  diagList.innerHTML = diagLog.slice().reverse().map(e => {
+    const isClear = e.msg.startsWith('Log cleared');
+    const isDisc  = e.msg.startsWith('SW disconnected');
+    const cls = isClear ? 'diag-row diag-row--warn' : isDisc ? 'diag-row diag-row--err' : 'diag-row';
+    return `<div class="${cls}"><span class="diag-time">${e.time}</span><span class="diag-msg">${e.msg}</span></div>`;
+  }).join('');
+}
+
+diagBtn.addEventListener('click', () => {
+  diagOverlay.classList.toggle('hidden');
+  if (!diagOverlay.classList.contains('hidden')) renderDiagLog();
+});
+diagCloseBtn.addEventListener('click', () => diagOverlay.classList.add('hidden'));
+diagClearBtn.addEventListener('click', () => { diagLog.length = 0; renderDiagLog(); });
+
+// ── Record toggle ──────────────────────────────────────────────────────────
+const recordToggleBtn = document.getElementById('recordToggleBtn');
+recordToggleBtn.addEventListener('click', () => {
+  isRecording = !isRecording;
+  recordToggleBtn.classList.toggle('rec-btn--paused', !isRecording);
+  recordToggleBtn.title = isRecording ? 'Recording — click to pause' : 'Paused — click to resume';
+});
 
 // ── Sort order ─────────────────────────────────────────────────────────────
 const SORT_KEY = 'api-mocker-sort';
@@ -378,7 +475,9 @@ let sortNewestBottom = localStorage.getItem(SORT_KEY) !== 'oldest';
 let autoScrollEnabled = true;
 
 function updateSortBtn() {
-  sortToggleBtn.textContent = sortNewestBottom ? '↓ Newest' : '↑ Oldest';
+  const label = sortToggleBtn.querySelector('span');
+  if (label) label.textContent = sortNewestBottom ? 'Newest' : 'Oldest';
+  sortToggleBtn.classList.toggle('action-chip--active', sortNewestBottom);
 }
 updateSortBtn();
 
@@ -584,13 +683,13 @@ function initDrawerCodeMirror() {
     search, searchKeymap,
     closeBrackets, closeBracketsKeymap, tags } = window.CM;
   const jsonHighlight = HighlightStyle.define([
-    { tag: tags.propertyName, color: '#7c3aed' },
-    { tag: tags.string,       color: '#047857' },
-    { tag: tags.number,       color: '#1d4ed8' },
-    { tag: tags.bool,         color: '#b45309' },
-    { tag: tags.null,         color: '#b91c1c' },
-    { tag: tags.punctuation,  color: '#374151' },
-    { tag: tags.bracket,      color: '#374151', fontWeight: 'bold' },
+    { tag: tags.propertyName, color: '#2563EB' },
+    { tag: tags.string,       color: '#16A34A' },
+    { tag: tags.number,       color: '#EA580C' },
+    { tag: tags.bool,         color: '#9333EA' },
+    { tag: tags.null,         color: '#EF4444' },
+    { tag: tags.punctuation,  color: '#0F172A' },
+    { tag: tags.bracket,      color: '#0F172A', fontWeight: 'bold' },
   ]);
   drawerCmEditor = new EditorView({
     state: EditorState.create({
@@ -613,24 +712,24 @@ function initDrawerCodeMirror() {
           }},
         ]),
         EditorView.theme({
-          '&': { height: '100%', background: '#f8f9ff', fontSize: '12px' },
-          '.cm-scroller': { overflow: 'auto', fontFamily: 'ui-monospace, Consolas, "Courier New", monospace', lineHeight: '1.6' },
-          '.cm-content': { padding: '8px 0', caretColor: '#111827' },
-          '.cm-gutters': { background: '#f0f0f8', border: 'none', borderRight: '1px solid #e5e7eb' },
-          '.cm-lineNumbers .cm-gutterElement': { color: '#9ca3af', minWidth: '28px', padding: '0 6px 0 4px' },
-          '.cm-foldGutter .cm-gutterElement': { color: '#9ca3af', padding: '0 4px', cursor: 'pointer' },
-          '.cm-activeLine': { background: 'rgba(79,70,229,0.04)' },
-          '.cm-activeLineGutter': { background: 'rgba(79,70,229,0.04)' },
-          '.cm-matchingBracket': { background: 'rgba(79,70,229,0.15)', borderRadius: '2px', outline: 'none' },
-          '.cm-selectionBackground, &.cm-focused .cm-selectionBackground': { background: 'rgba(79,70,229,0.2)' },
-          '.cm-cursor': { borderLeftColor: '#111827' },
+          '&': { height: '100%', background: '#FFFFFF', fontSize: '11px' },
+          '.cm-scroller': { overflow: 'auto', fontFamily: "'Roboto Mono', ui-monospace, Consolas, monospace", lineHeight: '1.6' },
+          '.cm-content': { padding: '10px 0', caretColor: '#0F172A' },
+          '.cm-gutters': { background: '#F8FAFC', border: 'none', borderRight: '1px solid #E2E8F0' },
+          '.cm-lineNumbers .cm-gutterElement': { color: '#94A3B8', minWidth: '32px', padding: '0 8px 0 4px' },
+          '.cm-foldGutter .cm-gutterElement': { color: '#94A3B8', padding: '0 4px', cursor: 'pointer' },
+          '.cm-activeLine': { background: 'rgba(59,130,246,0.04)' },
+          '.cm-activeLineGutter': { background: 'rgba(59,130,246,0.04)' },
+          '.cm-matchingBracket': { background: 'rgba(59,130,246,0.15)', borderRadius: '2px', outline: 'none' },
+          '.cm-selectionBackground, &.cm-focused .cm-selectionBackground': { background: 'rgba(59,130,246,0.15)' },
+          '.cm-cursor': { borderLeftColor: '#0F172A' },
           '.cm-searchMatch': { background: 'rgba(253,224,71,0.5)', borderRadius: '2px' },
           '.cm-searchMatch.cm-searchMatch-selected': { background: 'rgba(251,146,60,0.5)' },
-          '.cm-panels': { background: '#f0f0f8', borderBottom: '1px solid #e5e7eb' },
-          '.cm-panel.cm-search': { padding: '4px 8px', fontSize: '11px', fontFamily: 'ui-monospace, Consolas, monospace' },
-          '.cm-panel.cm-search input': { border: '1px solid #d1d5db', borderRadius: '3px', padding: '2px 5px', fontSize: '11px' },
-          '.cm-panel.cm-search button': { padding: '2px 7px', border: '1px solid #d1d5db', borderRadius: '3px', background: '#fff', fontSize: '11px', cursor: 'pointer', marginLeft: '4px' },
-          '.cm-foldPlaceholder': { background: '#e0d9f7', border: '1px solid #c4b5fd', color: '#5b21b6', borderRadius: '3px', padding: '0 4px', cursor: 'pointer' },
+          '.cm-panels': { background: '#F8FAFC', borderBottom: '1px solid #E2E8F0' },
+          '.cm-panel.cm-search': { padding: '4px 8px', fontSize: '11px', fontFamily: "'Roboto Mono', ui-monospace, monospace" },
+          '.cm-panel.cm-search input': { border: '1px solid #E2E8F0', borderRadius: '3px', padding: '2px 5px', fontSize: '11px' },
+          '.cm-panel.cm-search button': { padding: '2px 7px', border: '1px solid #E2E8F0', borderRadius: '3px', background: '#F1F5F9', fontSize: '11px', cursor: 'pointer', marginLeft: '4px' },
+          '.cm-foldPlaceholder': { background: '#DBEAFE', border: '1px solid #93C5FD', color: '#1D4ED8', borderRadius: '3px', padding: '0 4px', cursor: 'pointer' },
         }),
       ],
     }),
@@ -741,13 +840,33 @@ function closeMockDrawer() {
     .forEach(c => c.classList.remove('open'));
 }
 
-// ── Resize handle ──────────────────────────────────────────────────────────
+// ── Resize handle (left: call list) ───────────────────────────────────────
 const resizeHandle = document.getElementById('resizeHandle');
 let resizing = false, resizeStartX = 0, resizeStartW = 0, resizeRafId = null, resizeLastX = 0;
 
 const RESIZE_KEY = 'api-mocker-list-width';
 const savedW = parseInt(localStorage.getItem(RESIZE_KEY), 10);
 if (savedW && savedW > 100) callListCol.style.width = savedW + 'px';
+
+// ── Resize handle (right: mock col) ───────────────────────────────────────
+const colDivider = document.getElementById('colDivider');
+const mockColEl  = document.getElementById('mockCol');
+let colResizing = false, colResizeStartX = 0, colResizeStartW = 0;
+
+const COL_RESIZE_KEY = 'api-mocker-mock-col-width';
+const savedMockW = parseInt(localStorage.getItem(COL_RESIZE_KEY), 10);
+if (savedMockW && savedMockW > 200) mockColEl.style.width = savedMockW + 'px';
+
+if (colDivider) {
+  colDivider.addEventListener('mousedown', (e) => {
+    colResizing = true;
+    colResizeStartX = e.clientX;
+    colResizeStartW = mockColEl.offsetWidth;
+    colDivider.classList.add('dragging');
+    document.body.style.userSelect = 'none';
+    document.body.style.cursor = 'col-resize';
+  });
+}
 
 resizeHandle.addEventListener('mousedown', (e) => {
   resizing = true;
@@ -759,41 +878,58 @@ resizeHandle.addEventListener('mousedown', (e) => {
   document.body.style.cursor = 'col-resize';
 });
 document.addEventListener('mousemove', (e) => {
-  if (!resizing) return;
-  resizeLastX = e.clientX;
-  if (resizeRafId) return; // already scheduled — skip, use latest position on next frame
-  resizeRafId = requestAnimationFrame(() => {
-    resizeRafId = null;
-    const w = Math.max(160, Math.min(resizeStartW + resizeLastX - resizeStartX, window.innerWidth * 0.6));
-    callListCol.style.width = w + 'px';
-  });
+  if (resizing) {
+    resizeLastX = e.clientX;
+    if (resizeRafId) return;
+    resizeRafId = requestAnimationFrame(() => {
+      resizeRafId = null;
+      const w = Math.max(160, Math.min(resizeStartW + resizeLastX - resizeStartX, window.innerWidth * 0.6));
+      callListCol.style.width = w + 'px';
+    });
+  }
+  if (colResizing) {
+    const delta = colResizeStartX - e.clientX;
+    const w = Math.max(240, Math.min(colResizeStartW + delta, window.innerWidth * 0.55));
+    mockColEl.style.width = w + 'px';
+  }
 });
 document.addEventListener('mouseup', () => {
-  if (!resizing) return;
-  if (resizeRafId) { cancelAnimationFrame(resizeRafId); resizeRafId = null; }
-  resizing = false;
-  resizeHandle.classList.remove('dragging');
-  document.body.style.userSelect = '';
-  document.body.style.cursor = '';
-  localStorage.setItem(RESIZE_KEY, callListCol.offsetWidth);
+  if (resizing) {
+    if (resizeRafId) { cancelAnimationFrame(resizeRafId); resizeRafId = null; }
+    resizing = false;
+    resizeHandle.classList.remove('dragging');
+    document.body.style.userSelect = '';
+    document.body.style.cursor = '';
+    localStorage.setItem(RESIZE_KEY, callListCol.offsetWidth);
+  }
+  if (colResizing) {
+    colResizing = false;
+    if (colDivider) colDivider.classList.remove('dragging');
+    document.body.style.userSelect = '';
+    document.body.style.cursor = '';
+    localStorage.setItem(COL_RESIZE_KEY, mockColEl.offsetWidth);
+  }
 });
 
-// ── Tabs (top-level: Calls / Mocks) ───────────────────────────────────────
+// ── Tabs (top-level: Inspector / Mocks) ───────────────────────────────────
 document.querySelectorAll('.tab').forEach(btn => {
   btn.addEventListener('click', () => {
+    if (btn.disabled || !btn.dataset.tab) return;
+    const viewId = btn.dataset.tab + 'View';
+    if (!document.getElementById(viewId)) return;
     document.querySelectorAll('.tab').forEach(b => b.classList.remove('active'));
     document.querySelectorAll('.view').forEach(v => v.classList.add('hidden'));
     btn.classList.add('active');
-    document.getElementById(btn.dataset.tab + 'View').classList.remove('hidden');
+    document.getElementById(viewId).classList.remove('hidden');
   });
 });
 
-// ── Body tabs (Response Body / Request Body) ───────────────────────────────
-document.querySelectorAll('.body-tab').forEach(btn => {
+// ── Response sub-tabs (Response / Request) ────────────────────────────────
+document.querySelectorAll('.resp-tab[data-body-tab]').forEach(btn => {
   btn.addEventListener('click', () => {
     if (!selectedCall) return;
     activeBodyTab = btn.dataset.bodyTab;
-    document.querySelectorAll('.body-tab').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.resp-tab[data-body-tab]').forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
     renderActiveTree(selectedCall);
   });
@@ -846,25 +982,7 @@ filterInput.addEventListener('input', () => {
 });
 
 // ── Port messages ──────────────────────────────────────────────────────────
-port.onMessage.addListener((msg) => {
-  if (!msg) return;
-  if (msg.type === 'INIT_LOG') {
-    calls = msg.payload || [];
-    selectedCall = null;
-    renderCallList();
-    showEmptyDetail();
-  } else if (msg.type === 'CALL') {
-    calls.push(msg.payload);
-    appendSingleCall(msg.payload);
-  } else if (msg.type === 'MOCKS_UPDATED') {
-    mocks = msg.payload || {};
-    mockCountEl.textContent = Object.keys(mocks).length;
-    renderMockList();
-    if (selectedCall) renderMockPanel(selectedCall);
-  } else if (msg.type === 'DOMAIN_STATUS') {
-    setDomainEnabled(msg.domain, msg.enabled);
-  }
-});
+// Handled by onPortMessage (registered in connectPort above).
 
 // ── Call list ──────────────────────────────────────────────────────────────
 function visibleCalls() {
@@ -873,16 +991,28 @@ function visibleCalls() {
 
 function buildCallElement(c) {
   const el = document.createElement('div');
-  const sc = c.status >= 400 ? 'err' : c.status >= 300 ? 'warn' : 'ok';
-  const ms = c.mocked ? 'mock' : c.durationMs > 0 ? `${c.durationMs}ms` : '—';
+  const dotCls = c.status >= 500 ? 'err' : c.status >= 400 ? 'warn' : c.status >= 300 ? 'redirect' : c.status ? 'ok' : 'pending';
+  const statusCls = c.status >= 500 ? 'err' : c.status >= 400 ? 'warn' : c.status >= 300 ? 'redirect' : 'ok';
+  const timing = c.mocked ? 'mocked' : c.durationMs > 0 ? `${c.durationMs}ms` : '—';
+  const timingSlow = c.durationMs > 300 ? ' call-timing--slow' : '';
   const key = `${c.method} ${c.url}`;
   const isMocked = c.mocked || !!mocks[key];
+  const method = esc(c.method || 'GET');
   el.className = 'call' + (isMocked ? ' mocked' : '') + (selectedCall === c ? ' selected' : '');
   el.innerHTML = `
-    <span class="cm ${c.method}">${esc(c.method)}</span>
-    <span class="cs ${sc}">${c.status || '—'}</span>
-    <span class="cu" title="${esc(c.url)}">${urlPath(c.url)}</span>
-    <span class="ct">${ms}</span>
+    <div class="call-left-accent"></div>
+    <div class="call-content">
+      <div class="call-row1">
+        <span class="status-dot status-dot--${dotCls}"></span>
+        <span class="method-badge method-badge--${method}">${method}</span>
+        <span class="call-status call-status--${statusCls}">${c.status || '—'}</span>
+        <span class="call-timing-spacer"></span>
+        <span class="call-timing${timingSlow}">${timing}</span>
+      </div>
+      <div class="call-row2">
+        <span class="call-url" title="${esc(c.url)}">${urlPath(c.url)}</span>
+      </div>
+    </div>
     <button class="curl-btn" title="Copy as cURL">⧉ cURL</button>
   `;
   el.querySelector('.curl-btn').addEventListener('click', (e) => {
@@ -908,8 +1038,9 @@ function buildCallElement(c) {
 function renderCallList() {
   selectedCallEl = null;
   const list = visibleCalls();
-  callCountEl.textContent = list.length;
   callListEl.innerHTML = '';
+
+  callCountEl.textContent = list.length + (list.length === 1 ? ' call' : ' calls');
 
   if (!list.length) {
     callListEl.innerHTML = '<div class="list-empty">No API calls yet — make a request on the page.</div>';
@@ -934,7 +1065,7 @@ function appendSingleCall(c) {
   if (empty) empty.remove();
 
   const visible = visibleCalls();
-  callCountEl.textContent = visible.length;
+  callCountEl.textContent = visible.length + (visible.length === 1 ? ' call' : ' calls');
 
   if (filterText && !c.url.toLowerCase().includes(filterText)) return;
 
@@ -951,6 +1082,7 @@ function appendSingleCall(c) {
 function showEmptyDetail() {
   detailEmpty.style.display = '';
   detailContent.classList.add('hidden');
+  copyAsCurlBtn.style.display = 'none';
 }
 
 function renderDetail(c) {
@@ -959,20 +1091,22 @@ function renderDetail(c) {
 
   // Reset body tab to Response on every new call selection
   activeBodyTab = 'response';
-  document.querySelectorAll('.body-tab').forEach(b => {
+  document.querySelectorAll('.resp-tab[data-body-tab]').forEach(b => {
     b.classList.toggle('active', b.dataset.bodyTab === 'response');
   });
 
   // Header
-  const sc = c.status >= 400 ? '#b91c1c' : c.status >= 300 ? '#b45309' : '#047857';
+  const statusCls = c.status >= 500 ? 'err' : c.status >= 400 ? 'warn' : c.status >= 300 ? 'info' : 'ok';
+  const statusLabel = c.status
+    ? (c.status >= 500 ? `${c.status} Error` : c.status >= 400 ? `${c.status}` : c.status >= 300 ? `${c.status}` : `${c.status} OK`)
+    : '—';
+  const method = esc(c.method || 'GET');
+  const meta = c.durationMs > 0 ? `${c.durationMs}ms` : c.mocked ? 'mocked' : '—';
   detailHeader.innerHTML = `
-    <strong class="cm ${c.method}">${esc(c.method)}</strong>
-    <span style="color:#6b7280;margin:0 6px">|</span>
-    <span style="color:${sc};font-weight:600">${c.status || '—'}</span>
-    <span style="color:#6b7280;margin:0 6px">|</span>
-    <span style="color:#6b7280">${c.durationMs > 0 ? c.durationMs + 'ms' : c.mocked ? 'mocked' : '—'}</span>
-    <span style="color:#6b7280;margin:0 6px">|</span>
-    <span title="${esc(c.url)}">${esc(truncUrl(c.url))}</span>
+    <span class="req-method-badge method-badge--${method}">${method}</span>
+    <span class="req-url" title="${esc(c.url)}">${urlPath(c.url)}</span>
+    <span class="req-status-badge req-status-badge--${statusCls}">${statusLabel}</span>
+    <span class="req-meta">${meta}</span>
   `;
 
   renderActiveTree(c);
@@ -983,19 +1117,51 @@ function renderDetail(c) {
 
 const expandAllBtn   = document.getElementById('expandAllBtn');
 const collapseAllBtn = document.getElementById('collapseAllBtn');
+const copyAsCurlBtn  = document.getElementById('copyAsCurlBtn');
 expandAllBtn.addEventListener('click', () => {
   jsonTree.querySelectorAll('details').forEach(d => d.setAttribute('open', ''));
 });
 collapseAllBtn.addEventListener('click', () => {
   jsonTree.querySelectorAll('details').forEach(d => d.removeAttribute('open'));
 });
+copyAsCurlBtn.addEventListener('click', () => {
+  if (!selectedCall) return;
+  navigator.clipboard.writeText(buildCurl(selectedCall)).then(() => {
+    copyAsCurlBtn.textContent = '✓ Copied';
+    copyAsCurlBtn.classList.add('tiny-btn--copied');
+    setTimeout(() => {
+      copyAsCurlBtn.textContent = '⧉ cURL';
+      copyAsCurlBtn.classList.remove('tiny-btn--copied');
+    }, 2000);
+  });
+});
+
+function renderQueryParams(url) {
+  let params;
+  try {
+    params = [...new URL(url).searchParams.entries()];
+  } catch {
+    params = [];
+  }
+  if (!params.length) {
+    jsonTree.innerHTML = '<span class="empty">No request body</span>';
+    return;
+  }
+  const rows = params.map(([k, v]) =>
+    `<tr><td class="qp-key">${esc(k)}</td><td class="qp-val">${esc(v)}</td></tr>`
+  ).join('');
+  jsonTree.innerHTML =
+    `<div class="qp-label">Query Parameters</div>` +
+    `<table class="qp-table"><tbody>${rows}</tbody></table>`;
+}
 
 function renderActiveTree(c) {
+  copyAsCurlBtn.style.display = '';
   if (activeBodyTab === 'request') {
     if (!c.requestBody || !c.requestBody.trim()) {
-      jsonTree.innerHTML = '<span class="empty">No request body</span>';
       expandAllBtn.style.display  = 'none';
       collapseAllBtn.style.display = 'none';
+      renderQueryParams(c.url);
       return;
     }
     renderJsonTree(c.requestBody);
@@ -1077,7 +1243,10 @@ function renderMockPanel(c) {
   const existing = mocks[key];
   const isEnabled = existing && existing.enabled;
 
-  mockColTitle.textContent = existing ? '✓ Mock Active' : 'Create Mock';
+  mockColTitle.textContent = 'Mock Response';
+  if (mockActiveBadge) {
+    mockActiveBadge.classList.toggle('hidden', !isEnabled);
+  }
   mockStatusEl.value = existing ? existing.status : (c.status || 200);
 
   // Only reset content when switching to a different call.
@@ -1101,7 +1270,7 @@ function renderMockPanel(c) {
   lastMockPanelState = newMockState;
 
   mockActionsEl.innerHTML = '';
-  const saveBtn = makeBtn('primary', existing ? 'Update Mock' : 'Save as Mock', async () => {
+  const saveBtn = makeBtn('primary', existing ? 'Update Mock' : 'Save Mock', async () => {
     saveBtn.disabled = true;
     try {
       await chrome.runtime.sendMessage({
@@ -1119,24 +1288,24 @@ function renderMockPanel(c) {
   mockActionsEl.appendChild(saveBtn);
 
   if (existing) {
-    const toggleBtn = makeBtn('', isEnabled ? 'Disable Mock' : 'Enable Mock', async () => {
+    const spacer = document.createElement('div');
+    spacer.className = 'actions-flex-spacer';
+    mockActionsEl.appendChild(spacer);
+
+    const toggleBtn = makeBtn(isEnabled ? 'danger' : '', isEnabled ? 'Disable' : 'Enable', async () => {
       toggleBtn.disabled = true;
       try {
         await chrome.runtime.sendMessage({ type: 'TOGGLE_MOCK', key, enabled: !isEnabled });
       } catch { void chrome.runtime.lastError; }
       toggleBtn.disabled = false;
     });
-    const delBtn = makeBtn('danger', 'Delete Mock', async () => {
+    mockActionsEl.appendChild(toggleBtn);
+
+    const delBtn = makeBtn('', 'Delete', async () => {
       if (!confirm(`Delete mock for ${c.method} ${c.url}?`)) return;
       try { await chrome.runtime.sendMessage({ type: 'DELETE_MOCK', key }); } catch { void chrome.runtime.lastError; }
     });
-    mockActionsEl.appendChild(toggleBtn);
     mockActionsEl.appendChild(delBtn);
-
-    const badge = document.createElement('span');
-    badge.className = 'mock-badge' + (isEnabled ? '' : ' off');
-    badge.textContent = isEnabled ? 'ON' : 'OFF';
-    mockActionsEl.appendChild(badge);
   }
 }
 
@@ -1192,9 +1361,9 @@ function buildMockCard(key, m) {
   card.dataset.savedAt = String(m.savedAt);
   card.innerHTML = `
     <div class="mock-card-head">
-      <span class="cm ${esc(m.method)}">${esc(m.method)}</span>
+      <span class="method-badge method-badge--${esc(m.method)}">${esc(m.method)}</span>
       <span class="mock-card-url" title="${esc(m.url)}">${esc(m.url)}</span>
-      <span class="badge">${m.status}</span>
+      <span class="tab-badge">${m.status}</span>
       <div class="switch ${m.enabled ? 'on' : ''}" data-key="${esc(key)}" title="${m.enabled ? 'Disable' : 'Enable'}"></div>
       <button class="mock-chevron" data-key="${esc(key)}" title="View / edit mock body">›</button>
     </div>

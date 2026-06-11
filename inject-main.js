@@ -33,6 +33,10 @@
       active = false;
       mocks = {};
     }
+    if (d.type === 'WAKE') {
+      // content-bridge was injected late (already-loaded tab) — re-trigger READY
+      post('READY');
+    }
   });
 
   // Ask the bridge for current domain status / mocks.
