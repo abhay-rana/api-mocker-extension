@@ -35,7 +35,7 @@
       </svg>
       Mocks <span id="mockCount" class="tab-badge">0</span>
     </button>
-    <button class="tab" data-tab="settings" disabled>
+    <button class="tab" data-tab="settings">
       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <circle cx="12" cy="12" r="3"/>
         <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
@@ -248,6 +248,42 @@
       </button>
     </div>
     <div id="mockList" class="mock-list"></div>
+  </div>
+
+  <!-- ── Settings view ──────────────────────────────────────────────────── -->
+  <div id="settingsView" class="view hidden">
+    <div class="settings-body">
+
+      <div class="settings-section">
+        <div class="settings-section-header">
+          <div class="settings-section-title-wrap">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/>
+            </svg>
+            <span class="settings-section-title">Open in IDE</span>
+          </div>
+          <label class="settings-toggle-row">
+            <span class="settings-toggle-label">Enable</span>
+            <button class="switch" id="ideToggle" title="Enable Open in IDE"></button>
+          </label>
+        </div>
+        <p class="settings-hint">
+          Adds <strong>"Open using API Mocker"</strong> to the right-click menu in the DevTools
+          Sources tab. When enabled, clicking any source link opens it in your IDE
+          and the Sources tab simultaneously.
+        </p>
+
+        <div class="settings-field-row">
+          <label class="settings-field-label" for="ideSelect">IDE</label>
+          <select id="ideSelect" class="settings-select">
+            <option value="vscode">VS Code</option>
+            <option value="cursor">Cursor</option>
+          </select>
+        </div>
+
+      </div>
+
+    </div>
   </div>
 
 </div><!-- /root -->

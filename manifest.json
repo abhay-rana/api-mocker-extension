@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "API Mocker (Frontend Unblock)",
+  "name": "API Mocker",
   "version": "1.0.0",
   "description": "Intercept fetch/XHR on the active tab, view request/response JSON, and serve mock responses without backend changes.",
   "permissions": ["storage", "scripting", "webNavigation", "tabs"],

@@ -1488,3 +1488,35 @@ function tryPretty(s) {
   try { return JSON.stringify(JSON.parse(s), null, 2); } catch { return s; }
 }
 
+// ── Open in IDE settings ───────────────────────────────────────────────────
+const IDE_STORAGE_KEY = 'api-mocker-ide';
+let ideSettings = { enabled: true, ide: 'vscode' };
+
+function saveIdeSettings() {
+  chrome.storage.local.set({ [IDE_STORAGE_KEY]: ideSettings });
+}
+
+function renderIdeSettings() {
+  const toggle = document.getElementById('ideToggle');
+  const select = document.getElementById('ideSelect');
+  if (toggle) toggle.className = 'switch' + (ideSettings.enabled ? ' on' : '');
+  if (select) select.value = ideSettings.ide || 'vscode';
+}
+
+document.getElementById('ideToggle')?.addEventListener('click', () => {
+  ideSettings.enabled = !ideSettings.enabled;
+  document.getElementById('ideToggle').className = 'switch' + (ideSettings.enabled ? ' on' : '');
+  saveIdeSettings();
+});
+
+document.getElementById('ideSelect')?.addEventListener('change', e => {
+  ideSettings.ide = e.target.value;
+  saveIdeSettings();
+});
+
+// Load IDE settings on init
+chrome.storage.local.get(IDE_STORAGE_KEY, result => {
+  ideSettings = result[IDE_STORAGE_KEY] || { enabled: true, ide: 'vscode' };
+  renderIdeSettings();
+});
+
