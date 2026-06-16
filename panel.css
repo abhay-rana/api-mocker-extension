@@ -174,6 +174,72 @@ input, select { font-family: inherit; }
 .call-status--err      { color: #EF4444; }
 .call-status--redirect { color: #3B82F6; }
 
+/* ── Call stats bar ─────────────────────────────────────────────────────── */
+.call-stats-bar {
+  display: flex; align-items: center; gap: 4px;
+  height: 28px; padding: 0 8px;
+  background: #F8FAFC; border-bottom: 1px solid #E2E8F0;
+  flex-shrink: 0;
+}
+.call-stats-bar.hidden { display: none; }
+.cs-chip {
+  display: inline-flex; align-items: center; gap: 3px;
+  height: 18px; padding: 0 8px; border-radius: 4px;
+  font-family: 'Inter', system-ui, sans-serif;
+  font-size: 9px; font-weight: 600; flex-shrink: 0;
+}
+.cs-chip--all   { background: #3B82F6; color: #FFFFFF; }
+.cs-chip--mock  { background: #DCFCE7; color: #15803D; }
+.cs-chip--delay { background: #FEF3C7; color: #B45309; }
+.cs-chip--block { background: #FEE2E2; color: #7F1D1D; }
+.cs-dot { width: 5px; height: 5px; border-radius: 50%; flex-shrink: 0; }
+.cs-dot--mock  { background: #22C55E; }
+.cs-dot--delay { background: #F59E0B; }
+.cs-dot--block { background: #EF4444; }
+
+/* ── Call row / detail header badges ───────────────────────────────────── */
+/* MOCK — green pill */
+.cb-mock {
+  display: inline-flex; align-items: center;
+  height: 13px; padding: 0 4px; border-radius: 3px;
+  background: #DCFCE7;
+  font-family: 'Inter', system-ui, sans-serif;
+  font-size: 8px; font-weight: 700; color: #15803D;
+  flex-shrink: 0;
+}
+/* BLOCKED — red pill with ban icon */
+.cb-block {
+  display: inline-flex; align-items: center; gap: 3px;
+  height: 13px; padding: 0 4px; border-radius: 3px;
+  background: #FEE2E2;
+  font-family: 'Inter', system-ui, sans-serif;
+  font-size: 8px; font-weight: 700; color: #7F1D1D;
+  flex-shrink: 0;
+}
+.cb-block svg { color: #7F1D1D; flex-shrink: 0; }
+/* Delay — amber pill with hourglass icon */
+.cb-delay {
+  display: inline-flex; align-items: center; gap: 3px;
+  height: 13px; padding: 0 4px; border-radius: 3px;
+  background: #FEF3C7;
+  font-family: 'Inter', system-ui, sans-serif;
+  font-size: 8px; font-weight: 600; color: #B45309;
+  flex-shrink: 0;
+}
+.cb-delay svg { color: #B45309; flex-shrink: 0; }
+
+/* Sub-rule tags on Mocks-tab cards */
+.mock-card-badges { display: inline-flex; gap: 4px; flex-wrap: wrap; flex-shrink: 0; }
+.rule-tag {
+  display: inline-flex; align-items: center;
+  height: 16px; padding: 0 6px; border-radius: 3px;
+  font-size: 9px; font-weight: 700; white-space: nowrap;
+}
+.rule-tag--response { background: #DBEAFE; color: #1D4ED8; }
+.rule-tag--throttle { background: #FEF3C7; color: #B45309; }
+.rule-tag--block    { background: #FEE2E2; color: #B91C1C; }
+.rule-tag.off { opacity: 0.4; text-decoration: line-through; }
+
 .call-timing-spacer { flex: 1; }
 .call-timing { font-size: 10px; color: #64748B; font-variant-numeric: tabular-nums; flex-shrink: 0; }
 .call-timing--slow { color: #F59E0B; }

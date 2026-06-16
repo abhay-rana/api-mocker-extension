@@ -13,10 +13,21 @@
   let callSeq = 0;
 
   const mockKey = (method, url) => `${(method || 'GET').toUpperCase()} ${url}`;
-  const findMock = (method, url) => {
-    const m = mocks[mockKey(method, url)];
-    return m && m.enabled ? m : null;
+  const findRule = (method, url) => mocks[mockKey(method, url)] || null;
+
+  // Resolve the three sub-rules (only when enabled) for a request.
+  const resolveRule = (method, url) => {
+    const rule = findRule(method, url);
+    return {
+      key: mockKey(method, url),
+      block:    rule && rule.block    && rule.block.enabled    ? rule.block    : null,
+      throttle: rule && rule.throttle && rule.throttle.enabled ? rule.throttle : null,
+      response: rule && rule.response && rule.response.enabled ? rule.response : null,
+    };
   };
+
+  const delay = (ms) => new Promise((r) => setTimeout(r, ms > 0 ? ms : 0));
+  const consume = (key, kind) => post('CONSUME', { key, kind });
 
   const post = (type, payload) => {
     window.postMessage({ source: TAG_OUT, type, payload }, '*');
@@ -68,21 +79,40 @@
     }
 
     const reqHeaders = collectFetchHeaders(input, init);
+    const base = { id, url, method, requestHeaders: reqHeaders, requestBody: reqBody, timestamp: Date.now() };
 
-    const mock = findMock(method, url);
-    if (mock) {
-      const body = mock.body ?? '';
-      const status = mock.status || 200;
-      post('CALL', {
-        id, url, method,
-        requestHeaders: reqHeaders,
-        requestBody: reqBody,
-        status,
-        responseBody: body,
-        mocked: true,
-        durationMs: 0,
-        timestamp: Date.now(),
-      });
+    const { key, block, throttle, response } = resolveRule(method, url);
+
+    // ── BLOCK (highest precedence) ──
+    if (block) {
+      consume(key, 'block');
+      if (block.mode === 'abort') {
+        post('CALL', { ...base, status: 0, responseBody: '[blocked — connection aborted]', mocked: false, blocked: true, durationMs: 0 });
+        throw new TypeError('Failed to fetch');
+      }
+      const status = block.status || 200;
+      post('CALL', { ...base, status, responseBody: '', mocked: false, blocked: true, durationMs: 0 });
+      // 204/205/304 are null-body statuses — an empty string is still a "non-null" body and throws.
+      const nullBody = status === 204 || status === 205 || status === 304;
+      return new Response(nullBody ? null : '', { status, statusText: '' });
+    }
+
+    // ── THROTTLE ──
+    const throttleDelayMs = throttle ? (throttle.delayMs || 0) : 0;
+    if (throttle) {
+      consume(key, 'throttle');
+      if (throttle.preset === 'offline') {
+        post('CALL', { ...base, status: 0, responseBody: '[throttle — offline]', mocked: false, throttled: true, throttleDelayMs: 0, durationMs: 0 });
+        throw new TypeError('Failed to fetch');
+      }
+      await delay(throttle.delayMs);
+    }
+
+    // ── RESPONSE mock (delay, if any, already applied) ──
+    if (response) {
+      const body = response.body ?? '';
+      const status = response.status || 200;
+      post('CALL', { ...base, status, responseBody: body, mocked: true, throttled: !!throttle, throttleDelayMs, durationMs: Math.round(performance.now() - startedAt) });
       return new Response(body, {
         status,
         statusText: 'OK',
@@ -90,6 +120,7 @@
       });
     }
 
+    // ── REAL network (throttle delay already applied) ──
     try {
       const res = await origFetch(input, init);
       const status = res.status;
@@ -100,41 +131,14 @@
         const respBody = text.length > MAX_BODY_LOG
           ? text.slice(0, MAX_BODY_LOG) + '\n… [truncated — response too large to log]'
           : text;
-        post('CALL', {
-          id, url, method,
-          requestHeaders: reqHeaders,
-          requestBody: reqBody,
-          status,
-          responseBody: respBody,
-          mocked: false,
-          durationMs: elapsed,
-          timestamp: Date.now(),
-        });
+        post('CALL', { ...base, status, responseBody: respBody, mocked: false, throttled: !!throttle, throttleDelayMs, durationMs: elapsed });
       }).catch(() => {
-        post('CALL', {
-          id, url, method,
-          requestHeaders: reqHeaders,
-          requestBody: reqBody,
-          status,
-          responseBody: '[unreadable]',
-          mocked: false,
-          durationMs: elapsed,
-          timestamp: Date.now(),
-        });
+        post('CALL', { ...base, status, responseBody: '[unreadable]', mocked: false, throttled: !!throttle, throttleDelayMs, durationMs: elapsed });
       });
 
       return res; // returned immediately — app is never blocked by our logging
     } catch (err) {
-      post('CALL', {
-        id, url, method,
-        requestHeaders: reqHeaders,
-        requestBody: reqBody,
-        status: 0,
-        responseBody: `[network error] ${err && err.message || err}`,
-        mocked: false,
-        durationMs: Math.round(performance.now() - startedAt),
-        timestamp: Date.now(),
-      });
+      post('CALL', { ...base, status: 0, responseBody: `[network error] ${err && err.message || err}`, mocked: false, throttled: !!throttle, throttleDelayMs, durationMs: Math.round(performance.now() - startedAt) });
       throw err;
     }
   };
@@ -162,69 +166,105 @@
     const id = ++callSeq;
     const startedAt = performance.now();
     const reqBody = body != null ? safeStringify(body) : null;
-    const mock = findMock(ctx.method, ctx.url);
+    const base = { id, url: ctx.url, method: ctx.method, requestHeaders: ctx.headers || {}, requestBody: reqBody, timestamp: Date.now() };
 
-    if (mock) {
-      const status = mock.status || 200;
-      const respBody = mock.body ?? '';
-      const props = {
-        readyState: { configurable: true, get: () => 4 },
-        status: { configurable: true, get: () => status },
-        statusText: { configurable: true, get: () => 'OK' },
-        responseText: { configurable: true, get: () => respBody },
-        response: { configurable: true, get: () => respBody },
-        responseURL: { configurable: true, get: () => ctx.url },
-        responseType: { configurable: true, get: () => '' },
-      };
-      Object.defineProperties(this, props);
+    const { key, block, throttle, response } = resolveRule(ctx.method, ctx.url);
 
-      const fire = (name) => {
-        try { this.dispatchEvent(new ProgressEvent(name)); } catch {}
-        const handler = this['on' + name];
-        if (typeof handler === 'function') {
-          try { handler.call(this, new ProgressEvent(name)); } catch {}
-        }
-      };
-
-      setTimeout(() => {
-        try { this.dispatchEvent(new Event('readystatechange')); } catch {}
-        if (typeof this.onreadystatechange === 'function') {
-          try { this.onreadystatechange(new Event('readystatechange')); } catch {}
-        }
-        fire('load');
-        fire('loadend');
-        post('CALL', {
-          id, url: ctx.url, method: ctx.method,
-          requestHeaders: ctx.headers || {},
-          requestBody: reqBody,
-          status, responseBody: respBody,
-          mocked: true,
-          durationMs: 0,
-          timestamp: Date.now(),
-        });
-      }, 0);
+    // ── BLOCK ──
+    if (block) {
+      consume(key, 'block');
+      if (block.mode === 'abort') {
+        fireXhrError(this, () => post('CALL', { ...base, status: 0, responseBody: '[blocked — connection aborted]', mocked: false, blocked: true, durationMs: 0 }), 0);
+        return;
+      }
+      const status = block.status || 200;
+      fakeXhr(this, ctx, status, '', () => post('CALL', { ...base, status, responseBody: '', mocked: false, blocked: true, durationMs: 0 }), 0);
       return;
     }
 
+    // ── THROTTLE ──
+    let delayMs = 0;
+    if (throttle) {
+      consume(key, 'throttle');
+      if (throttle.preset === 'offline') {
+        fireXhrError(this, () => post('CALL', { ...base, status: 0, responseBody: '[throttle — offline]', mocked: false, throttled: true, throttleDelayMs: 0, durationMs: 0 }), 0);
+        return;
+      }
+      delayMs = throttle.delayMs || 0;
+    }
+    const throttleDelayMs = delayMs;
+
+    // ── RESPONSE mock (after delay) ──
+    if (response) {
+      const status = response.status || 200;
+      const respBody = response.body ?? '';
+      fakeXhr(this, ctx, status, respBody, () => post('CALL', { ...base, status, responseBody: respBody, mocked: true, throttled: !!throttle, throttleDelayMs, durationMs: Math.round(performance.now() - startedAt) }), delayMs);
+      return;
+    }
+
+    // ── REAL network (with optional throttle delay before send) ──
     const xhr = this;
     const onDone = function () {
       let respBody = '';
       try { respBody = typeof xhr.responseText === 'string' ? xhr.responseText : String(xhr.response); } catch {}
-      post('CALL', {
-        id, url: ctx.url, method: ctx.method,
-        requestHeaders: ctx.headers || {},
-        requestBody: reqBody,
-        status: xhr.status,
-        responseBody: respBody,
-        mocked: false,
-        durationMs: Math.round(performance.now() - startedAt),
-        timestamp: Date.now(),
-      });
+      post('CALL', { ...base, status: xhr.status, responseBody: respBody, mocked: false, throttled: !!throttle, throttleDelayMs, durationMs: Math.round(performance.now() - startedAt) });
       xhr.removeEventListener('loadend', onDone);
     };
     this.addEventListener('loadend', onDone);
-    return origSend.call(this, body);
+    if (delayMs > 0) {
+      setTimeout(() => origSend.call(xhr, body), delayMs);
+    } else {
+      origSend.call(this, body);
+    }
   };
+
+  // Fake a completed XHR response (status + body) after an optional delay.
+  function fakeXhr(xhr, ctx, status, respBody, postFn, delayMs) {
+    Object.defineProperties(xhr, {
+      readyState:   { configurable: true, get: () => 4 },
+      status:       { configurable: true, get: () => status },
+      statusText:   { configurable: true, get: () => (status >= 200 && status < 300 ? 'OK' : '') },
+      responseText: { configurable: true, get: () => respBody },
+      response:     { configurable: true, get: () => respBody },
+      responseURL:  { configurable: true, get: () => ctx.url },
+      responseType: { configurable: true, get: () => '' },
+    });
+    const fire = (name) => {
+      try { xhr.dispatchEvent(new ProgressEvent(name)); } catch {}
+      const handler = xhr['on' + name];
+      if (typeof handler === 'function') { try { handler.call(xhr, new ProgressEvent(name)); } catch {} }
+    };
+    setTimeout(() => {
+      try { xhr.dispatchEvent(new Event('readystatechange')); } catch {}
+      if (typeof xhr.onreadystatechange === 'function') { try { xhr.onreadystatechange(new Event('readystatechange')); } catch {} }
+      fire('load');
+      fire('loadend');
+      postFn();
+    }, delayMs || 0);
+  }
+
+  // Fake a network-error XHR (status 0) after an optional delay.
+  function fireXhrError(xhr, postFn, delayMs) {
+    Object.defineProperties(xhr, {
+      readyState:   { configurable: true, get: () => 4 },
+      status:       { configurable: true, get: () => 0 },
+      statusText:   { configurable: true, get: () => '' },
+      responseText: { configurable: true, get: () => '' },
+      response:     { configurable: true, get: () => '' },
+    });
+    const fire = (name) => {
+      try { xhr.dispatchEvent(new ProgressEvent(name)); } catch {}
+      const handler = xhr['on' + name];
+      if (typeof handler === 'function') { try { handler.call(xhr, new ProgressEvent(name)); } catch {} }
+    };
+    setTimeout(() => {
+      try { xhr.dispatchEvent(new Event('readystatechange')); } catch {}
+      if (typeof xhr.onreadystatechange === 'function') { try { xhr.onreadystatechange(new Event('readystatechange')); } catch {} }
+      fire('error');
+      fire('loadend');
+      postFn();
+    }, delayMs || 0);
+  }
 
   function collectFetchHeaders(input, init) {
     const out = {};

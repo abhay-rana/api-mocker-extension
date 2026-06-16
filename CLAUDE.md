@@ -9,8 +9,11 @@ Chrome MV3 extension for frontend devs to intercept, inspect, and mock fetch/XHR
 - Detail pane splits **side-by-side**: collapsible JSON tree (response body, read-only) + mock editor
 - Mock editor: syntax-highlighted textarea, custom undo/redo stack (Ctrl+Z / Ctrl+Shift+Z), Format button `{ }` (Ctrl+Shift+F), `↩ Original` button resets editor to actual response body
 - Save / Update / Enable / Disable / Delete per mock rule
+- **Throttle** sub-rule — fixed pre-delay before the response (presets `3G/Fast 3G/4G` or custom ms); `Offline` preset fails the request with a network error
+- **Block** sub-rule — abort connection, return error status (empty body), or return empty response with a chosen code
+- **Repeat counting** — Throttle/Block can apply `Always`, `×1`, or `×5`; the remaining count persists in storage, decrements per matching request (via `CONSUME_RULE`), and auto-disables the sub-rule at zero
 - Mocks survive page reload (stored in `chrome.storage.local`)
-- Mocks tab — lists all saved rules with toggle switches
+- Mocks tab — lists all saved rules with per-sub-rule badges + a master toggle
 - Floating Shadow DOM pill (bottom-right of every page) — live call counter, last 5 calls, global mock on/off toggle
 
 ## Architecture — Critical
@@ -44,6 +47,10 @@ Two content script worlds must stay separate:
 - **MV3 SW dies after 30s idle even with an open port** — confirmed in production. Fix: panel sends `{ type: 'PING' }` every 25s via the port (`setInterval` in `connectPort`, cleared in `onDisconnect`). Background handles it with an early `return`. Do not remove this — without it the SW restarts, `callLog` (in-memory Map) is wiped, and the panel receives `INIT_LOG []` silently clearing all captured calls.
 - **`INIT_LOG` carries a `reason` field** — `'navigation'` (page nav / SPA pushState), `'reconnect'` (SW restart), `'clear'` (user clicked Clear). Panel logs this to `diagLog[]` for debugging. `webNavigation.onCommitted` fires on every SPA route change (not just full reloads) and always sends `INIT_LOG` with an empty payload.
 - **Diagnostic log** — `diagLog[]` circular buffer (max 50) in `panel.js`, written via `addDiag(msg)`. Surfaced via the `ⓘ` button in the call-list toolbar. Records SW connect/disconnect and every `INIT_LOG` with its reason and prior call count. Do not remove — it's the only way to debug panel wipes without an external service.
+- **Composite rule shape** — each `METHOD URL` key stores `{ method, url, savedAt, response?, throttle?, block? }`. Each sub-rule carries its own `enabled`. Legacy flat rules (`{ status, body, enabled }`) are lazily wrapped into `{ response: {...} }` by `migrateMocks()` inside `loadMocks()` — idempotent, runs every load. Anything reading a rule must go through the sub-rule (`rule.response.status`, not `rule.status`).
+- **Interception precedence (inject-main `resolveRule`)** — **Block → Throttle → Response → real network**. Block short-circuits (abort throws / synthetic status); Throttle delays then falls through (Offline preset throws); Response returns the mock; otherwise the real call runs (with the throttle delay already applied).
+- **`new Response(body, {status})` throws for 204/205/304 with a non-null body** — `''` counts as non-null. Block "empty" mode offers 204, so pass `null` body for null-body statuses.
+- **Repeat counting via `CONSUME_RULE`** — when a counted (`remaining != null`) Throttle/Block applies, inject-main posts `CONSUME` → bridge → background decrements `remaining` and disables the sub-rule at 0. Truly-simultaneous requests may over-apply `×1` by one — accepted limitation.
 - **Mock mutations in background.js must go through `commitMocks(mocks)`** — it sequences `saveMocks` then `broadcastMocks`. Never call them separately or broadcast can be silently skipped.
 - **Never fully re-render the detail pane on `MOCKS_UPDATED`** — it destroys the textarea and wipes the undo stack. Only reset editor value when `dataset.callId` changes (different call selected).
 - **`renderMockList` is incremental** — it diffs against existing cards via a `Map` built from one `querySelectorAll` pass. Cards are patched (toggle-only) or replaced (when `dataset.savedAt` changes). Do not revert it to `innerHTML = ''` wipe-and-rebuild.
@@ -61,5 +68,4 @@ After any code change: click **↺ refresh** on the extension card → close and
 ## Planned Features (not built yet)
 
 - Request body matching (return different mocks based on request payload)
-- Status code / network delay / error simulation per rule
 - Import / export all mock rules as a JSON file

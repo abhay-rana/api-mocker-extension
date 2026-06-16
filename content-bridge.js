@@ -58,6 +58,11 @@
         void chrome.runtime.lastError;
       });
       window.dispatchEvent(new CustomEvent('api-mocker:call', { detail: d.payload }));
+    } else if (d.type === 'CONSUME') {
+      if (!domainEnabled) return;
+      chrome.runtime.sendMessage({ type: 'CONSUME_RULE', payload: d.payload }, () => {
+        void chrome.runtime.lastError;
+      });
     }
   });
 

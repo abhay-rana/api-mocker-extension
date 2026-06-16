@@ -116,6 +116,7 @@
           <span id="callCount" class="domain-call-count">0 calls</span>
         </div>
 
+        <div id="callStats" class="call-stats-bar hidden"></div>
         <div id="callList" class="call-list" tabindex="0"></div>
       </div>
 
@@ -247,12 +248,12 @@
 
               <div class="rule-section">
                 <div class="rule-section-label">DELAY PRESET</div>
-                <div class="preset-btn-group">
-                  <button class="preset-btn">Offline</button>
-                  <button class="preset-btn">3G</button>
-                  <button class="preset-btn preset-btn--active">Fast 3G</button>
-                  <button class="preset-btn">4G</button>
-                  <button class="preset-btn">Custom</button>
+                <div class="preset-btn-group" id="throttlePresets">
+                  <button class="preset-btn" data-preset="offline" data-ms="0">Offline</button>
+                  <button class="preset-btn" data-preset="3g" data-ms="2000">3G</button>
+                  <button class="preset-btn preset-btn--active" data-preset="fast3g" data-ms="1600">Fast 3G</button>
+                  <button class="preset-btn" data-preset="4g" data-ms="500">4G</button>
+                  <button class="preset-btn" data-preset="custom">Custom</button>
                 </div>
               </div>
 
@@ -266,11 +267,10 @@
 
               <div class="rule-section">
                 <div class="rule-section-label">REPEAT</div>
-                <div class="preset-btn-group">
-                  <button class="preset-btn">None</button>
-                  <button class="preset-btn preset-btn--active">Always</button>
-                  <button class="preset-btn">×1</button>
-                  <button class="preset-btn">×5</button>
+                <div class="preset-btn-group" id="throttleRepeat">
+                  <button class="preset-btn preset-btn--active" data-repeat="always">Always</button>
+                  <button class="preset-btn" data-repeat="x1">×1</button>
+                  <button class="preset-btn" data-repeat="x5">×5</button>
                 </div>
               </div>
 
@@ -311,11 +311,11 @@
                 </label>
                 <div class="rule-sub-row">
                   <span class="field-label">HTTP Status Code</span>
-                  <div class="preset-btn-group">
-                    <button class="preset-btn">400</button>
-                    <button class="preset-btn preset-btn--active">404</button>
-                    <button class="preset-btn">500</button>
-                    <button class="preset-btn">503</button>
+                  <div class="preset-btn-group" id="blockErrorCodes">
+                    <button class="preset-btn" data-code="400">400</button>
+                    <button class="preset-btn preset-btn--active" data-code="404">404</button>
+                    <button class="preset-btn" data-code="500">500</button>
+                    <button class="preset-btn" data-code="503">503</button>
                   </div>
                 </div>
 
@@ -328,9 +328,9 @@
                 </label>
                 <div class="rule-sub-row">
                   <span class="field-label">HTTP Status Code</span>
-                  <div class="preset-btn-group">
-                    <button class="preset-btn preset-btn--active">200</button>
-                    <button class="preset-btn">204</button>
+                  <div class="preset-btn-group" id="blockEmptyCodes">
+                    <button class="preset-btn preset-btn--active" data-code="200">200</button>
+                    <button class="preset-btn" data-code="204">204</button>
                   </div>
                 </div>
 
@@ -338,11 +338,10 @@
 
               <div class="rule-section">
                 <div class="rule-section-label">REPEAT</div>
-                <div class="preset-btn-group">
-                  <button class="preset-btn">None</button>
-                  <button class="preset-btn preset-btn--active">Always</button>
-                  <button class="preset-btn">×1</button>
-                  <button class="preset-btn">×5</button>
+                <div class="preset-btn-group" id="blockRepeat">
+                  <button class="preset-btn preset-btn--active" data-repeat="always">Always</button>
+                  <button class="preset-btn" data-repeat="x1">×1</button>
+                  <button class="preset-btn" data-repeat="x5">×5</button>
                 </div>
               </div>
 

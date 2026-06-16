@@ -12,7 +12,42 @@ const panelPorts = new Map(); // tabId -> port
 
 async function loadMocks() {
   const r = await chrome.storage.local.get(STORAGE_KEY);
-  return r[STORAGE_KEY] || {};
+  return migrateMocks(r[STORAGE_KEY] || {});
+}
+
+// Lazily wrap legacy flat rules { status, body, enabled } into the nested
+// composite shape { response: { enabled, status, body } }. Idempotent.
+function migrateMocks(mocks) {
+  for (const key of Object.keys(mocks)) {
+    const m = mocks[key];
+    if (!m || typeof m !== 'object') continue;
+    const isNested = 'response' in m || 'throttle' in m || 'block' in m;
+    if (isNested) continue;
+    mocks[key] = {
+      method: m.method,
+      url: m.url,
+      savedAt: m.savedAt || 0,
+      response: {
+        enabled: m.enabled !== false,
+        status: m.status || 200,
+        body: m.body ?? '',
+      },
+    };
+  }
+  return mocks;
+}
+
+// 'always' → unlimited (null); 'x1' → 1; 'x5' → 5
+function repeatToRemaining(repeat) {
+  if (repeat === 'x1') return 1;
+  if (repeat === 'x5') return 5;
+  return null; // always
+}
+
+// Delete the composite key if it has no remaining sub-rules.
+function pruneRule(mocks, key) {
+  const m = mocks[key];
+  if (m && !m.response && !m.throttle && !m.block) delete mocks[key];
 }
 async function saveMocks(mocks) {
   await chrome.storage.local.set({ [STORAGE_KEY]: mocks });
@@ -171,24 +206,116 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     if (msg.type === 'SAVE_MOCK') {
       const mocks = await loadMocks();
       const m = msg.payload;
-      const key = `${(m.method || 'GET').toUpperCase()} ${m.url}`;
+      const method = (m.method || 'GET').toUpperCase();
+      const key = `${method} ${m.url}`;
+      const prev = mocks[key] || {};
       mocks[key] = {
-        method: (m.method || 'GET').toUpperCase(),
+        ...prev,
+        method,
         url: m.url,
-        enabled: m.enabled !== false,
-        status: m.status || 200,
-        body: m.body ?? '',
         savedAt: Date.now(),
+        response: {
+          enabled: m.enabled !== false,
+          status: m.status || 200,
+          body: m.body ?? '',
+        },
       };
       await commitMocks(mocks);
       sendResponse({ ok: true, key });
       return;
     }
 
+    if (msg.type === 'SAVE_THROTTLE') {
+      const mocks = await loadMocks();
+      const m = msg.payload;
+      const method = (m.method || 'GET').toUpperCase();
+      const key = `${method} ${m.url}`;
+      const prev = mocks[key] || {};
+      mocks[key] = {
+        ...prev,
+        method,
+        url: m.url,
+        savedAt: Date.now(),
+        throttle: {
+          enabled: m.enabled !== false,
+          preset: m.preset || 'fast3g',
+          delayMs: Number(m.delayMs) || 0,
+          repeat: m.repeat || 'always',
+          remaining: repeatToRemaining(m.repeat),
+        },
+      };
+      await commitMocks(mocks);
+      sendResponse({ ok: true, key });
+      return;
+    }
+
+    if (msg.type === 'SAVE_BLOCK') {
+      const mocks = await loadMocks();
+      const m = msg.payload;
+      const method = (m.method || 'GET').toUpperCase();
+      const key = `${method} ${m.url}`;
+      const prev = mocks[key] || {};
+      mocks[key] = {
+        ...prev,
+        method,
+        url: m.url,
+        savedAt: Date.now(),
+        block: {
+          enabled: m.enabled !== false,
+          mode: m.mode || 'abort',
+          status: m.status || 0,
+          repeat: m.repeat || 'always',
+          remaining: repeatToRemaining(m.repeat),
+        },
+      };
+      await commitMocks(mocks);
+      sendResponse({ ok: true, key });
+      return;
+    }
+
+    if (msg.type === 'REMOVE_SUBRULE') {
+      const mocks = await loadMocks();
+      const sub = msg.sub; // 'response' | 'throttle' | 'block'
+      if (mocks[msg.key] && ['response', 'throttle', 'block'].includes(sub)) {
+        delete mocks[msg.key][sub];
+        pruneRule(mocks, msg.key);
+        await commitMocks(mocks);
+      }
+      sendResponse({ ok: true });
+      return;
+    }
+
+    if (msg.type === 'TOGGLE_SUBRULE') {
+      const mocks = await loadMocks();
+      const sub = mocks[msg.key] && mocks[msg.key][msg.sub];
+      if (sub) {
+        sub.enabled = !!msg.enabled;
+        await commitMocks(mocks);
+      }
+      sendResponse({ ok: true });
+      return;
+    }
+
+    // Decrement a counted sub-rule after it applied. At zero, disable it.
+    if (msg.type === 'CONSUME_RULE') {
+      const mocks = await loadMocks();
+      const { key, kind } = msg.payload || {};
+      const sub = mocks[key] && mocks[key][kind];
+      if (sub && sub.enabled && sub.remaining != null) {
+        sub.remaining = Math.max(0, sub.remaining - 1);
+        if (sub.remaining === 0) sub.enabled = false;
+        await commitMocks(mocks);
+      }
+      sendResponse({ ok: true });
+      return;
+    }
+
     if (msg.type === 'TOGGLE_MOCK') {
       const mocks = await loadMocks();
       if (mocks[msg.key]) {
-        mocks[msg.key].enabled = !!msg.enabled;
+        for (const sub of ['response', 'throttle', 'block']) {
+          if (mocks[msg.key][sub]) mocks[msg.key][sub].enabled = !!msg.enabled;
+        }
         await commitMocks(mocks);
       }
       sendResponse({ ok: true });
@@ -203,17 +330,14 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       return;
     }
 
-    if (msg.type === 'ENABLE_ALL_MOCKS') {
+    if (msg.type === 'ENABLE_ALL_MOCKS' || msg.type === 'DISABLE_ALL_MOCKS') {
+      const enabled = msg.type === 'ENABLE_ALL_MOCKS';
       const mocks = await loadMocks();
-      for (const k of Object.keys(mocks)) mocks[k].enabled = true;
-      await commitMocks(mocks);
-      sendResponse({ ok: true });
-      return;
-    }
-
-    if (msg.type === 'DISABLE_ALL_MOCKS') {
-      const mocks = await loadMocks();
-      for (const k of Object.keys(mocks)) mocks[k].enabled = false;
+      for (const k of Object.keys(mocks)) {
+        for (const sub of ['response', 'throttle', 'block']) {
+          if (mocks[k][sub]) mocks[k][sub].enabled = enabled;
+        }
+      }
       await commitMocks(mocks);
       sendResponse({ ok: true });
       return;

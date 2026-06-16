@@ -424,6 +424,7 @@ const mockStatusEl    = document.getElementById('mockStatus');
 const mockActionsEl   = document.getElementById('mockActions');
 const jsonErrorEl     = document.getElementById('jsonError');
 const callCountEl     = document.getElementById('callCount');
+const callStatsEl     = document.getElementById('callStats');
 const mockCountEl     = document.getElementById('mockCount');
 const filterInput     = document.getElementById('filterInput');
 const resetOrigBtn    = document.getElementById('resetOrigBtn');
@@ -803,10 +804,11 @@ function saveDrawerMock() {
   } else {
     errEl.classList.add('hidden');
   }
+  const resp = m.response || {};
   saveBtn.disabled = true;
   chrome.runtime.sendMessage({
     type: 'SAVE_MOCK',
-    payload: { method: m.method, url: m.url, status: m.status, body, enabled: m.enabled },
+    payload: { method: m.method, url: m.url, status: resp.status || 200, body, enabled: resp.enabled !== false },
   }, () => { void chrome.runtime.lastError; saveBtn.disabled = false; });
 }
 
@@ -824,7 +826,7 @@ function openMockDrawer(key) {
   card.querySelector('.mock-chevron').classList.add('open');
   card.appendChild(drawer); // attach to DOM before CodeMirror init
 
-  const body = tryPretty(m.body);
+  const body = tryPretty(m.response ? m.response.body : '');
   setDrawerContent(body);
   drawerMode = editorMode;
   applyDrawerModeVisibility();
@@ -1009,11 +1011,26 @@ function visibleCalls() {
   return filterText ? calls.filter(c => c.url.toLowerCase().includes(filterText)) : calls;
 }
 
+function renderCallStats() {
+  const list = visibleCalls();
+  if (!list.length) { callStatsEl.classList.add('hidden'); return; }
+  const total   = list.length;
+  const mocked  = list.filter(c => c.mocked).length;
+  const delayed = list.filter(c => c.throttled && !c.blocked).length;
+  const blocked = list.filter(c => c.blocked).length;
+  const chips = [`<span class="cs-chip cs-chip--all">All ${total}</span>`];
+  if (mocked)  chips.push(`<span class="cs-chip cs-chip--mock"><span class="cs-dot cs-dot--mock"></span>Mock ${mocked}</span>`);
+  if (delayed) chips.push(`<span class="cs-chip cs-chip--delay"><span class="cs-dot cs-dot--delay"></span>Delay ${delayed}</span>`);
+  if (blocked) chips.push(`<span class="cs-chip cs-chip--block"><span class="cs-dot cs-dot--block"></span>Blocked ${blocked}</span>`);
+  callStatsEl.innerHTML = chips.join('');
+  callStatsEl.classList.remove('hidden');
+}
+
 function buildCallElement(c) {
   const el = document.createElement('div');
   const dotCls = c.status >= 500 ? 'err' : c.status >= 400 ? 'warn' : c.status >= 300 ? 'redirect' : c.status ? 'ok' : 'pending';
   const statusCls = c.status >= 500 ? 'err' : c.status >= 400 ? 'warn' : c.status >= 300 ? 'redirect' : 'ok';
-  const timing = c.mocked ? 'mocked' : c.durationMs > 0 ? `${c.durationMs}ms` : '—';
+  const timing = c.durationMs > 0 ? `${c.durationMs}ms` : '—';
   const timingSlow = c.durationMs > 300 ? ' call-timing--slow' : '';
   const key = `${c.method} ${c.url}`;
   const isMocked = c.mocked || !!mocks[key];
@@ -1026,6 +1043,9 @@ function buildCallElement(c) {
         <span class="status-dot status-dot--${dotCls}"></span>
         <span class="method-badge method-badge--${method}">${method}</span>
         <span class="call-status call-status--${statusCls}">${c.status || '—'}</span>
+        ${c.mocked ? '<span class="cb-mock">MOCK</span>' : ''}
+        ${c.blocked ? '<span class="cb-block"><svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>BLOCKED</span>' : ''}
+        ${c.throttled && !c.blocked && c.throttleDelayMs > 0 ? `<span class="cb-delay"><svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 22h14"/><path d="M5 2h14"/><path d="M17 22v-4.172a2 2 0 0 0-.586-1.414L12 12l-4.414 4.414A2 2 0 0 0 7 17.828V22"/><path d="M7 2v4.172a2 2 0 0 1 .586 1.414L12 12l4.414-4.414A2 2 0 0 0 17 6.172V2"/></svg>${parseFloat((c.throttleDelayMs/1000).toFixed(1))}s</span>` : ''}
         <span class="call-timing-spacer"></span>
         <span class="call-timing${timingSlow}">${timing}</span>
       </div>
@@ -1061,6 +1081,7 @@ function renderCallList() {
   callListEl.innerHTML = '';
 
   callCountEl.textContent = list.length + (list.length === 1 ? ' call' : ' calls');
+  renderCallStats();
 
   if (!list.length) {
     callListEl.innerHTML = '<div class="list-empty">No API calls yet — make a request on the page.</div>';
@@ -1086,6 +1107,7 @@ function appendSingleCall(c) {
 
   const visible = visibleCalls();
   callCountEl.textContent = visible.length + (visible.length === 1 ? ' call' : ' calls');
+  renderCallStats();
 
   if (filterText && !c.url.toLowerCase().includes(filterText)) return;
 
@@ -1126,6 +1148,9 @@ function renderDetail(c) {
     <span class="req-method-badge method-badge--${method}">${method}</span>
     <span class="req-url" title="${esc(c.url)}">${urlPath(c.url)}</span>
     <span class="req-status-badge req-status-badge--${statusCls}">${statusLabel}</span>
+    ${c.mocked ? '<span class="cb-mock">MOCK</span>' : ''}
+    ${c.blocked ? '<span class="cb-block"><svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>BLOCKED</span>' : ''}
+    ${c.throttled && !c.blocked && c.throttleDelayMs > 0 ? `<span class="cb-delay"><svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 22h14"/><path d="M5 2h14"/><path d="M17 22v-4.172a2 2 0 0 0-.586-1.414L12 12l-4.414 4.414A2 2 0 0 0 7 17.828V22"/><path d="M7 2v4.172a2 2 0 0 1 .586 1.414L12 12l4.414-4.414A2 2 0 0 0 17 6.172V2"/></svg>${parseFloat((c.throttleDelayMs/1000).toFixed(1))}s</span>` : ''}
     <span class="req-meta">${meta}</span>
   `;
 
@@ -1261,17 +1286,19 @@ function buildTree(val, depth) {
 function renderMockPanel(c) {
   const key = `${c.method} ${c.url}`;
   const existing = mocks[key];
-  const isEnabled = existing && existing.enabled;
+  const resp = existing && existing.response;
+  const respEnabled = !!(resp && resp.enabled);
+  const anyEnabled = !!(existing && ['response', 'throttle', 'block'].some(s => existing[s] && existing[s].enabled));
 
   if (mockActiveBadge) {
-    mockActiveBadge.classList.toggle('hidden', !isEnabled);
+    mockActiveBadge.classList.toggle('hidden', !anyEnabled);
   }
-  mockStatusEl.value = existing ? existing.status : (c.status || 200);
+  mockStatusEl.value = resp ? resp.status : (c.status || 200);
 
   // Only reset content when switching to a different call.
   // Preserves in-progress edits when mocks-update fires mid-edit.
   if (currentMockCallId !== String(c.id)) {
-    const body = existing ? existing.body : tryPretty(c.responseBody);
+    const body = resp ? resp.body : tryPretty(c.responseBody);
     setMockContent(body); // always keep tree state in sync
     currentMockCallId = String(c.id);
     lastMockPanelState = ''; // force action-bar rebuild on call switch
@@ -1283,13 +1310,17 @@ function renderMockPanel(c) {
     }
   }
 
-  // Actions bar — skip rebuild if mock existence/enabled state hasn't changed
-  const newMockState = `${key}:${!!existing}:${isEnabled}`;
+  // Populate the Throttle / Block panels from the stored rule (no textarea, safe to redo).
+  populateThrottlePanel(existing && existing.throttle);
+  populateBlockPanel(existing && existing.block);
+
+  // Actions bar — skip rebuild if response existence/enabled state hasn't changed
+  const newMockState = `${key}:${!!resp}:${respEnabled}`;
   if (newMockState === lastMockPanelState) return;
   lastMockPanelState = newMockState;
 
   mockActionsEl.innerHTML = '';
-  const saveBtn = makeBtn('primary', existing ? 'Update Mock' : 'Save Mock', async () => {
+  const saveBtn = makeBtn('primary', resp ? 'Update Mock' : 'Save Mock', async () => {
     saveBtn.disabled = true;
     try {
       await chrome.runtime.sendMessage({
@@ -1306,27 +1337,169 @@ function renderMockPanel(c) {
   });
   mockActionsEl.appendChild(saveBtn);
 
-  if (existing) {
+  if (resp) {
     const spacer = document.createElement('div');
     spacer.className = 'actions-flex-spacer';
     mockActionsEl.appendChild(spacer);
 
-    const toggleBtn = makeBtn(isEnabled ? 'danger' : '', isEnabled ? 'Disable' : 'Enable', async () => {
+    const toggleBtn = makeBtn(respEnabled ? 'danger' : '', respEnabled ? 'Disable' : 'Enable', async () => {
       toggleBtn.disabled = true;
       try {
-        await chrome.runtime.sendMessage({ type: 'TOGGLE_MOCK', key, enabled: !isEnabled });
+        await chrome.runtime.sendMessage({ type: 'TOGGLE_SUBRULE', key, sub: 'response', enabled: !respEnabled });
       } catch { void chrome.runtime.lastError; }
       toggleBtn.disabled = false;
     });
     mockActionsEl.appendChild(toggleBtn);
 
     const delBtn = makeBtn('', 'Delete', async () => {
-      if (!confirm(`Delete mock for ${c.method} ${c.url}?`)) return;
-      try { await chrome.runtime.sendMessage({ type: 'DELETE_MOCK', key }); } catch { void chrome.runtime.lastError; }
+      if (!confirm(`Delete mock response for ${c.method} ${c.url}?`)) return;
+      try { await chrome.runtime.sendMessage({ type: 'REMOVE_SUBRULE', key, sub: 'response' }); } catch { void chrome.runtime.lastError; }
     });
     mockActionsEl.appendChild(delBtn);
   }
 }
+
+// ── Throttle / Block panel controls ─────────────────────────────────────────
+const THROTTLE_MS = { offline: 0, '3g': 2000, fast3g: 1600, '4g': 500 };
+
+function setGroupActive(groupEl, predicate) {
+  if (!groupEl) return;
+  groupEl.querySelectorAll('.preset-btn').forEach(b => {
+    b.classList.toggle('preset-btn--active', predicate(b));
+  });
+}
+
+function setSwitch(el, on) {
+  if (el) el.classList.toggle('on', !!on);
+}
+
+function populateThrottlePanel(t) {
+  const toggle = document.getElementById('throttleToggle');
+  const presets = document.getElementById('throttlePresets');
+  const input = document.getElementById('throttleDelayInput');
+  const repeat = document.getElementById('throttleRepeat');
+  if (!toggle || !presets) return;
+
+  const preset = t ? (t.preset || 'fast3g') : 'fast3g';
+  setSwitch(toggle, t && t.enabled);
+  setGroupActive(presets, b => b.dataset.preset === preset);
+  if (input) input.value = t ? (t.delayMs ?? 1600) : 1600;
+  setGroupActive(repeat, b => b.dataset.repeat === (t ? (t.repeat || 'always') : 'always'));
+}
+
+function populateBlockPanel(b) {
+  const toggle = document.getElementById('blockToggle');
+  const repeat = document.getElementById('blockRepeat');
+  if (!toggle) return;
+
+  const mode = b ? (b.mode || 'abort') : 'abort';
+  setSwitch(toggle, b && b.enabled);
+  document.querySelectorAll('input[name="blockMode"]').forEach(r => { r.checked = r.value === mode; });
+
+  // Highlight saved status codes within the matching group.
+  const errCode = (b && b.mode === 'error-status') ? b.status : 404;
+  const emptyCode = (b && b.mode === 'empty') ? b.status : 200;
+  setGroupActive(document.getElementById('blockErrorCodes'), btn => Number(btn.dataset.code) === errCode);
+  setGroupActive(document.getElementById('blockEmptyCodes'), btn => Number(btn.dataset.code) === emptyCode);
+  setGroupActive(repeat, btn => btn.dataset.repeat === (b ? (b.repeat || 'always') : 'always'));
+}
+
+function setupRuleControls() {
+  // Exclusive selection within every preset button group.
+  document.querySelectorAll('.preset-btn-group').forEach(group => {
+    group.addEventListener('click', (e) => {
+      const btn = e.target.closest('.preset-btn');
+      if (!btn || !group.contains(btn)) return;
+      setGroupActive(group, b => b === btn);
+      // Throttle preset → reflect ms into the custom input.
+      if (group.id === 'throttlePresets' && btn.dataset.preset && btn.dataset.preset !== 'custom') {
+        const input = document.getElementById('throttleDelayInput');
+        if (input && THROTTLE_MS[btn.dataset.preset] != null) input.value = THROTTLE_MS[btn.dataset.preset];
+      }
+    });
+  });
+
+  // Editing the custom delay switches the active preset to Custom.
+  const delayInput = document.getElementById('throttleDelayInput');
+  if (delayInput) {
+    delayInput.addEventListener('input', () => {
+      setGroupActive(document.getElementById('throttlePresets'), b => b.dataset.preset === 'custom');
+    });
+  }
+
+  // Enable toggles.
+  ['throttleToggle', 'blockToggle'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener('click', () => el.classList.toggle('on'));
+  });
+
+  // Throttle save / remove.
+  const saveThrottle = document.getElementById('saveThrottleBtn');
+  if (saveThrottle) saveThrottle.addEventListener('click', async () => {
+    if (!selectedCall) return;
+    const presetBtn = document.querySelector('#throttlePresets .preset-btn--active');
+    const preset = presetBtn ? presetBtn.dataset.preset : 'fast3g';
+    const input = document.getElementById('throttleDelayInput');
+    const delayMs = preset === 'custom' || preset === 'offline'
+      ? (preset === 'offline' ? 0 : parseInt(input.value, 10) || 0)
+      : THROTTLE_MS[preset];
+    const repeatBtn = document.querySelector('#throttleRepeat .preset-btn--active');
+    try {
+      await chrome.runtime.sendMessage({
+        type: 'SAVE_THROTTLE',
+        payload: {
+          method: selectedCall.method, url: selectedCall.url,
+          enabled: document.getElementById('throttleToggle').classList.contains('on'),
+          preset, delayMs,
+          repeat: repeatBtn ? repeatBtn.dataset.repeat : 'always',
+        },
+      });
+    } catch { void chrome.runtime.lastError; }
+  });
+
+  const removeThrottle = document.getElementById('removeThrottleBtn');
+  if (removeThrottle) removeThrottle.addEventListener('click', async () => {
+    if (!selectedCall) return;
+    const key = `${selectedCall.method} ${selectedCall.url}`;
+    try { await chrome.runtime.sendMessage({ type: 'REMOVE_SUBRULE', key, sub: 'throttle' }); } catch { void chrome.runtime.lastError; }
+  });
+
+  // Block save / remove.
+  const saveBlock = document.getElementById('saveBlockBtn');
+  if (saveBlock) saveBlock.addEventListener('click', async () => {
+    if (!selectedCall) return;
+    const modeEl = document.querySelector('input[name="blockMode"]:checked');
+    const mode = modeEl ? modeEl.value : 'abort';
+    let status = 0;
+    if (mode === 'error-status') {
+      const b = document.querySelector('#blockErrorCodes .preset-btn--active');
+      status = b ? Number(b.dataset.code) : 404;
+    } else if (mode === 'empty') {
+      const b = document.querySelector('#blockEmptyCodes .preset-btn--active');
+      status = b ? Number(b.dataset.code) : 200;
+    }
+    const repeatBtn = document.querySelector('#blockRepeat .preset-btn--active');
+    try {
+      await chrome.runtime.sendMessage({
+        type: 'SAVE_BLOCK',
+        payload: {
+          method: selectedCall.method, url: selectedCall.url,
+          enabled: document.getElementById('blockToggle').classList.contains('on'),
+          mode, status,
+          repeat: repeatBtn ? repeatBtn.dataset.repeat : 'always',
+        },
+      });
+    } catch { void chrome.runtime.lastError; }
+  });
+
+  const removeBlock = document.getElementById('removeBlockBtn');
+  if (removeBlock) removeBlock.addEventListener('click', async () => {
+    if (!selectedCall) return;
+    const key = `${selectedCall.method} ${selectedCall.url}`;
+    try { await chrome.runtime.sendMessage({ type: 'REMOVE_SUBRULE', key, sub: 'block' }); } catch { void chrome.runtime.lastError; }
+  });
+}
+setupRuleControls();
 
 function makeBtn(cls, label, onClick) {
   const b = document.createElement('button');
@@ -1373,7 +1546,30 @@ deleteAllBtn.addEventListener('click', () => {
   chrome.runtime.sendMessage({ type: 'DELETE_ALL_MOCKS' }, () => void chrome.runtime.lastError);
 });
 
+// Any sub-rule enabled → the composite is "active".
+function ruleAnyEnabled(m) {
+  return ['response', 'throttle', 'block'].some(s => m[s] && m[s].enabled);
+}
+
+// One tag per present sub-rule, dimmed when that sub-rule is disabled.
+function ruleBadgesHtml(m) {
+  const out = [];
+  if (m.response) {
+    out.push(`<span class="rule-tag rule-tag--response${m.response.enabled ? '' : ' off'}">RESPONSE ${esc(m.response.status)}</span>`);
+  }
+  if (m.throttle) {
+    const lbl = m.throttle.preset === 'offline' ? 'OFFLINE' : `${(m.throttle.delayMs || 0) / 1000}s`;
+    out.push(`<span class="rule-tag rule-tag--throttle${m.throttle.enabled ? '' : ' off'}">THROTTLE ${esc(lbl)}</span>`);
+  }
+  if (m.block) {
+    const lbl = m.block.mode === 'abort' ? 'ABORT' : esc(m.block.status);
+    out.push(`<span class="rule-tag rule-tag--block${m.block.enabled ? '' : ' off'}">BLOCK ${lbl}</span>`);
+  }
+  return out.join('');
+}
+
 function buildMockCard(key, m) {
+  const enabled = ruleAnyEnabled(m);
   const card = document.createElement('div');
   card.className = 'mock-card';
   card.dataset.mockKey = key;
@@ -1382,9 +1578,9 @@ function buildMockCard(key, m) {
     <div class="mock-card-head">
       <span class="method-badge method-badge--${esc(m.method)}">${esc(m.method)}</span>
       <span class="mock-card-url" title="${esc(m.url)}">${esc(m.url)}</span>
-      <span class="tab-badge">${m.status}</span>
-      <div class="switch ${m.enabled ? 'on' : ''}" data-key="${esc(key)}" title="${m.enabled ? 'Disable' : 'Enable'}"></div>
-      <button class="mock-chevron" data-key="${esc(key)}" title="View / edit mock body">›</button>
+      <span class="mock-card-badges">${ruleBadgesHtml(m)}</span>
+      <div class="switch ${enabled ? 'on' : ''}" data-key="${esc(key)}" title="${enabled ? 'Disable all' : 'Enable all'}"></div>
+      ${m.response ? `<button class="mock-chevron" data-key="${esc(key)}" title="View / edit mock body">›</button>` : ''}
     </div>
     <div style="font-size:11px;color:#9ca3af;margin-top:4px">
       Saved ${new Date(m.savedAt).toLocaleString()}
@@ -1394,16 +1590,17 @@ function buildMockCard(key, m) {
   `;
   card.querySelector('.switch').addEventListener('click', e => {
     const k = e.currentTarget.dataset.key;
-    chrome.runtime.sendMessage({ type: 'TOGGLE_MOCK', key: k, enabled: !m.enabled },
+    chrome.runtime.sendMessage({ type: 'TOGGLE_MOCK', key: k, enabled: !enabled },
       () => void chrome.runtime.lastError);
   });
   card.querySelector('.del-link').addEventListener('click', async e => {
     e.preventDefault();
     const k = e.target.dataset.key;
-    if (!confirm(`Delete mock for ${k}?`)) return;
+    if (!confirm(`Delete all rules for ${k}?`)) return;
     try { await chrome.runtime.sendMessage({ type: 'DELETE_MOCK', key: k }); } catch { void chrome.runtime.lastError; }
   });
-  card.querySelector('.mock-chevron').addEventListener('click', e => {
+  const chevron = card.querySelector('.mock-chevron');
+  if (chevron) chevron.addEventListener('click', e => {
     const k = e.currentTarget.dataset.key;
     if (openMockKey === k) { closeMockDrawer(); } else { openMockDrawer(k); }
   });
@@ -1416,7 +1613,7 @@ function renderMockList() {
   mockCountEl.textContent = keys.length;
   updateBulkButtons(keys.length);
 
-  const activeCount   = keys.filter(k => mocks[k].enabled).length;
+  const activeCount   = keys.filter(k => ruleAnyEnabled(mocks[k])).length;
   const disabledCount = keys.length - activeCount;
   statTotalEl.textContent    = `${keys.length} mock${keys.length !== 1 ? 's' : ''}`;
   statActiveEl.textContent   = `${activeCount} active`;
@@ -1446,12 +1643,16 @@ function renderMockList() {
         mockListEl.replaceChild(newCard, existing);
         cardMap.set(key, newCard);
       } else {
-        // Toggle-only update — patch the switch in-place
+        // Enable-state change (no savedAt bump) — patch switch + badges in place,
+        // preserving any open drawer attached to this card.
+        const enabled = ruleAnyEnabled(m);
         const sw = existing.querySelector('.switch');
         if (sw) {
-          sw.className = `switch${m.enabled ? ' on' : ''}`;
-          sw.title = m.enabled ? 'Disable' : 'Enable';
+          sw.className = `switch${enabled ? ' on' : ''}`;
+          sw.title = enabled ? 'Disable all' : 'Enable all';
         }
+        const badges = existing.querySelector('.mock-card-badges');
+        if (badges) badges.innerHTML = ruleBadgesHtml(m);
       }
     } else {
       mockListEl.appendChild(buildMockCard(key, m));

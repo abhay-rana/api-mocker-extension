@@ -172,7 +172,7 @@
   window.addEventListener('api-mocker:mocks', (e) => {
     const m = e.detail || {};
     mockCount = Object.keys(m).length;
-    const anyOn = Object.values(m).some(v => v.enabled);
+    const anyOn = Object.values(m).some(v => ['response', 'throttle', 'block'].some(s => v[s] && v[s].enabled));
     allEnabled = anyOn;
     updateToggleBtn();
   });
