@@ -60412,7 +60412,8 @@
                           "fill": "#64748B",
                           "content": "Mock",
                           "fontFamily": "Inter",
-                          "fontSize": 12
+                          "fontSize": 12,
+                          "fontWeight": "normal"
                         },
                         {
                           "type": "rectangle",
@@ -60446,7 +60447,8 @@
                           "fill": "#64748B",
                           "content": "Throttle",
                           "fontFamily": "Inter",
-                          "fontSize": 12
+                          "fontSize": 12,
+                          "fontWeight": "normal"
                         },
                         {
                           "type": "rectangle",
@@ -60480,7 +60482,8 @@
                           "fill": "#64748B",
                           "content": "Block",
                           "fontFamily": "Inter",
-                          "fontSize": 12
+                          "fontSize": 12,
+                          "fontWeight": "normal"
                         },
                         {
                           "type": "rectangle",
@@ -60867,7 +60870,8 @@
                           "fill": "#64748B",
                           "content": "Path Only",
                           "fontFamily": "Inter",
-                          "fontSize": 11
+                          "fontSize": 11,
+                          "fontWeight": "normal"
                         }
                       ]
                     },
@@ -60892,7 +60896,8 @@
                           "fill": "#64748B",
                           "content": "Query Params",
                           "fontFamily": "Inter",
-                          "fontSize": 11
+                          "fontSize": 11,
+                          "fontWeight": "normal"
                         }
                       ]
                     }
@@ -61259,7 +61264,8 @@
                           "fill": "#64748B",
                           "content": "Mock",
                           "fontFamily": "Inter",
-                          "fontSize": 12
+                          "fontSize": 12,
+                          "fontWeight": "normal"
                         }
                       ]
                     },
@@ -61280,7 +61286,8 @@
                           "fill": "#64748B",
                           "content": "Throttle",
                           "fontFamily": "Inter",
-                          "fontSize": 12
+                          "fontSize": 12,
+                          "fontWeight": "normal"
                         }
                       ]
                     },
@@ -61301,7 +61308,8 @@
                           "fill": "#64748B",
                           "content": "Block",
                           "fontFamily": "Inter",
-                          "fontSize": 12
+                          "fontSize": 12,
+                          "fontWeight": "normal"
                         }
                       ]
                     },
@@ -61663,7 +61671,8 @@
                           "fill": "#64748B",
                           "content": "Path Only",
                           "fontFamily": "Inter",
-                          "fontSize": 11
+                          "fontSize": 11,
+                          "fontWeight": "normal"
                         }
                       ]
                     },
@@ -61688,7 +61697,8 @@
                           "fill": "#64748B",
                           "content": "Query Params",
                           "fontFamily": "Inter",
-                          "fontSize": 11
+                          "fontSize": 11,
+                          "fontWeight": "normal"
                         }
                       ]
                     }
@@ -63071,7 +63081,8 @@
                           "fill": "#64748B",
                           "content": "Mock",
                           "fontFamily": "Inter",
-                          "fontSize": 12
+                          "fontSize": 12,
+                          "fontWeight": "normal"
                         },
                         {
                           "type": "rectangle",
@@ -63106,7 +63117,8 @@
                           "fill": "#64748B",
                           "content": "Throttle",
                           "fontFamily": "Inter",
-                          "fontSize": 12
+                          "fontSize": 12,
+                          "fontWeight": "normal"
                         },
                         {
                           "type": "rectangle",
@@ -63141,7 +63153,8 @@
                           "fill": "#64748B",
                           "content": "Block",
                           "fontFamily": "Inter",
-                          "fontSize": 12
+                          "fontSize": 12,
+                          "fontWeight": "normal"
                         },
                         {
                           "type": "rectangle",
@@ -63529,7 +63542,8 @@
                           "fill": "#64748B",
                           "content": "Path Only",
                           "fontFamily": "Inter",
-                          "fontSize": 11
+                          "fontSize": 11,
+                          "fontWeight": "normal"
                         }
                       ]
                     },
@@ -63554,7 +63568,8 @@
                           "fill": "#64748B",
                           "content": "Query Params",
                           "fontFamily": "Inter",
-                          "fontSize": 11
+                          "fontSize": 11,
+                          "fontWeight": "normal"
                         }
                       ]
                     }
@@ -64980,7 +64995,8 @@
                           "fill": "#64748B",
                           "content": "Mock",
                           "fontFamily": "Inter",
-                          "fontSize": 12
+                          "fontSize": 12,
+                          "fontWeight": "normal"
                         },
                         {
                           "type": "rectangle",
@@ -65015,7 +65031,8 @@
                           "fill": "#64748B",
                           "content": "Throttle",
                           "fontFamily": "Inter",
-                          "fontSize": 12
+                          "fontSize": 12,
+                          "fontWeight": "normal"
                         },
                         {
                           "type": "rectangle",
@@ -65050,7 +65067,8 @@
                           "fill": "#64748B",
                           "content": "Block",
                           "fontFamily": "Inter",
-                          "fontSize": 12
+                          "fontSize": 12,
+                          "fontWeight": "normal"
                         },
                         {
                           "type": "rectangle",
@@ -65527,7 +65545,8 @@
                           "fill": "#64748B",
                           "content": "Path Only",
                           "fontFamily": "Inter",
-                          "fontSize": 11
+                          "fontSize": 11,
+                          "fontWeight": "normal"
                         }
                       ]
                     },
@@ -65552,7 +65571,8 @@
                           "fill": "#64748B",
                           "content": "Query Params",
                           "fontFamily": "Inter",
-                          "fontSize": 11
+                          "fontSize": 11,
+                          "fontWeight": "normal"
                         }
                       ]
                     }
@@ -66875,7 +66895,8 @@
                           "fill": "#64748B",
                           "content": "Mock",
                           "fontFamily": "Inter",
-                          "fontSize": 12
+                          "fontSize": 12,
+                          "fontWeight": "normal"
                         }
                       ]
                     },
@@ -66900,7 +66921,8 @@
                           "fill": "#64748B",
                           "content": "Throttle",
                           "fontFamily": "Inter",
-                          "fontSize": 12
+                          "fontSize": 12,
+                          "fontWeight": "normal"
                         }
                       ]
                     },
@@ -66925,7 +66947,8 @@
                           "fill": "#64748B",
                           "content": "Block",
                           "fontFamily": "Inter",
-                          "fontSize": 12
+                          "fontSize": 12,
+                          "fontWeight": "normal"
                         }
                       ]
                     },
@@ -67377,7 +67400,8 @@
                           "fill": "#64748B",
                           "content": "Path only",
                           "fontFamily": "Inter",
-                          "fontSize": 11
+                          "fontSize": 11,
+                          "fontWeight": "normal"
                         }
                       ]
                     },
@@ -67401,7 +67425,8 @@
                           "fill": "#64748B",
                           "content": "Host only",
                           "fontFamily": "Inter",
-                          "fontSize": 11
+                          "fontSize": 11,
+                          "fontWeight": "normal"
                         }
                       ]
                     }
@@ -67497,7 +67522,8 @@
                           "fill": "#64748B",
                           "content": "All endpoints",
                           "fontFamily": "Inter",
-                          "fontSize": 11
+                          "fontSize": 11,
+                          "fontWeight": "normal"
                         }
                       ]
                     },
@@ -67521,7 +67547,8 @@
                           "fill": "#64748B",
                           "content": "All methods",
                           "fontFamily": "Inter",
-                          "fontSize": 11
+                          "fontSize": 11,
+                          "fontWeight": "normal"
                         }
                       ]
                     }
@@ -68882,7 +68909,8 @@
                           "fill": "#64748B",
                           "content": "Mock",
                           "fontFamily": "Inter",
-                          "fontSize": 12
+                          "fontSize": 12,
+                          "fontWeight": "normal"
                         },
                         {
                           "type": "rectangle",
@@ -68917,7 +68945,8 @@
                           "fill": "#64748B",
                           "content": "Throttle",
                           "fontFamily": "Inter",
-                          "fontSize": 12
+                          "fontSize": 12,
+                          "fontWeight": "normal"
                         },
                         {
                           "type": "rectangle",
@@ -68952,7 +68981,8 @@
                           "fill": "#64748B",
                           "content": "Block",
                           "fontFamily": "Inter",
-                          "fontSize": 12
+                          "fontSize": 12,
+                          "fontWeight": "normal"
                         },
                         {
                           "type": "rectangle",
@@ -69428,7 +69458,8 @@
                           "fill": "#64748B",
                           "content": "Path Only",
                           "fontFamily": "Inter",
-                          "fontSize": 11
+                          "fontSize": 11,
+                          "fontWeight": "normal"
                         }
                       ]
                     },
@@ -69453,7 +69484,8 @@
                           "fill": "#64748B",
                           "content": "Query Params",
                           "fontFamily": "Inter",
-                          "fontSize": 11
+                          "fontSize": 11,
+                          "fontWeight": "normal"
                         }
                       ]
                     }
@@ -72954,7 +72986,8 @@
                           "fill": "#64748B",
                           "content": "Mock",
                           "fontFamily": "Inter",
-                          "fontSize": 12
+                          "fontSize": 12,
+                          "fontWeight": "normal"
                         },
                         {
                           "type": "rectangle",
@@ -72989,7 +73022,8 @@
                           "fill": "#64748B",
                           "content": "Throttle",
                           "fontFamily": "Inter",
-                          "fontSize": 12
+                          "fontSize": 12,
+                          "fontWeight": "normal"
                         },
                         {
                           "type": "rectangle",
@@ -73024,7 +73058,8 @@
                           "fill": "#64748B",
                           "content": "Block",
                           "fontFamily": "Inter",
-                          "fontSize": 12
+                          "fontSize": 12,
+                          "fontWeight": "normal"
                         },
                         {
                           "type": "rectangle",
