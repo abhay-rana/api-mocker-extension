@@ -430,6 +430,9 @@ const resetOrigBtn    = document.getElementById('resetOrigBtn');
 const enableAllBtn    = document.getElementById('enableAllBtn');
 const disableAllBtn   = document.getElementById('disableAllBtn');
 const deleteAllBtn    = document.getElementById('deleteAllBtn');
+const statTotalEl     = document.getElementById('statTotal');
+const statActiveEl    = document.getElementById('statActive');
+const statDisabledEl  = document.getElementById('statDisabled');
 const sortToggleBtn   = document.getElementById('sortToggleBtn');
 const domainPillText  = document.getElementById('domainPillText');
 
@@ -462,11 +465,14 @@ diagClearBtn.addEventListener('click', () => { diagLog.length = 0; renderDiagLog
 
 // ── Record toggle ──────────────────────────────────────────────────────────
 const recordToggleBtn = document.getElementById('recordToggleBtn');
-recordToggleBtn.addEventListener('click', () => {
-  isRecording = !isRecording;
-  recordToggleBtn.classList.toggle('rec-btn--paused', !isRecording);
-  recordToggleBtn.title = isRecording ? 'Recording — click to pause' : 'Paused — click to resume';
-});
+function setRecording(on) {
+  isRecording = on;
+  recordToggleBtn.classList.toggle('rec-btn--paused', !on);
+  recordToggleBtn.dataset.tooltip = on
+    ? 'Stop recording network log · Ctrl+E'
+    : 'Start recording network log · Ctrl+E';
+}
+recordToggleBtn.addEventListener('click', () => setRecording(!isRecording));
 
 // ── Sort order ─────────────────────────────────────────────────────────────
 const SORT_KEY = 'api-mocker-sort';
@@ -966,6 +972,7 @@ document.getElementById('reloadBtn').addEventListener('click', () => {
 document.addEventListener('keydown', (e) => {
   if (e.ctrlKey && e.key === 'l') { e.preventDefault(); clearLog(); }
   if (e.ctrlKey && e.key === 'r') { e.preventDefault(); chrome.tabs.reload(tabId); }
+  if (e.ctrlKey && e.key === 'e') { e.preventDefault(); setRecording(!isRecording); }
   if (e.ctrlKey && e.key === 'f' && editorMode === 'tree') { e.preventDefault(); openTreeSearch(); }
 });
 
@@ -1408,6 +1415,12 @@ function renderMockList() {
   const keys = Object.keys(mocks);
   mockCountEl.textContent = keys.length;
   updateBulkButtons(keys.length);
+
+  const activeCount   = keys.filter(k => mocks[k].enabled).length;
+  const disabledCount = keys.length - activeCount;
+  statTotalEl.textContent    = `${keys.length} mock${keys.length !== 1 ? 's' : ''}`;
+  statActiveEl.textContent   = `${activeCount} active`;
+  statDisabledEl.textContent = `${disabledCount} disabled`;
 
   if (!keys.length) {
     openMockKey = null;

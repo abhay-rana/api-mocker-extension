@@ -61,7 +61,7 @@
             <input id="filterInput" type="search" class="filter-input" placeholder="Filter by URL, method, status…" />
           </div>
           <div class="call-actions-row">
-            <button id="clearBtn" class="action-chip">
+            <button id="clearBtn" class="action-chip" data-tooltip="Clear network log · Ctrl+L" data-tooltip-pos="start">
               <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <polyline points="3 6 5 6 21 6"/>
                 <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
@@ -69,28 +69,28 @@
               </svg>
               Clear
             </button>
-            <button id="reloadBtn" class="action-chip">
+            <button id="reloadBtn" class="action-chip" data-tooltip="Reload network log · Ctrl+R">
               <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <polyline points="23 4 23 10 17 10"/>
                 <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
               </svg>
               Reload
             </button>
-            <button id="sortToggleBtn" class="action-chip action-chip--active">
+            <button id="sortToggleBtn" class="action-chip action-chip--active" data-tooltip="Toggle sort order">
               <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <line x1="12" y1="20" x2="12" y2="10"/><line x1="18" y1="20" x2="18" y2="4"/><line x1="6" y1="20" x2="6" y2="16"/>
               </svg>
               <span>Newest</span>
             </button>
             <div class="actions-spacer"></div>
-            <button id="diagBtn" class="action-icon-chip" title="Diagnostic log">
+            <button id="diagBtn" class="action-icon-chip" data-tooltip="Diagnostic log">
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <circle cx="12" cy="12" r="10"/>
                 <line x1="12" y1="8" x2="12" y2="12"/>
                 <line x1="12" y1="16" x2="12.01" y2="16"/>
               </svg>
             </button>
-            <button id="recordToggleBtn" class="action-icon-chip rec-btn" title="Recording — click to pause">
+            <button id="recordToggleBtn" class="action-icon-chip rec-btn" data-tooltip="Stop recording network log · Ctrl+E" data-tooltip-pos="end">
               <span class="rec-dot"></span>
             </button>
           </div>
@@ -372,6 +372,11 @@
         </svg>
         Delete All
       </button>
+    </div>
+    <div class="mocks-stats-bar">
+      <span class="mocks-stat mocks-stat--total" id="statTotal">0 mocks</span>
+      <span class="mocks-stat mocks-stat--active" id="statActive">0 active</span>
+      <span class="mocks-stat mocks-stat--disabled" id="statDisabled">0 disabled</span>
     </div>
     <div id="mockList" class="mock-list"></div>
   </div>

@@ -90,6 +90,22 @@ input, select { font-family: inherit; }
 .rec-btn--paused .rec-dot { background: #94A3B8; }
 .rec-btn--paused { opacity: 0.8; }
 
+/* ── Action-bar tooltips ─────────────────────────────────────────────────── */
+.action-chip, .action-icon-chip { position: relative; }
+[data-tooltip]::after {
+  content: attr(data-tooltip);
+  position: absolute; top: calc(100% + 7px); left: 50%;
+  transform: translateX(-50%);
+  background: #1E293B; color: #F1F5F9;
+  font-size: 11px; font-family: Inter, sans-serif; font-weight: 400;
+  white-space: nowrap; padding: 4px 8px; border-radius: 5px;
+  pointer-events: none; z-index: 9999;
+  opacity: 0; transition: opacity .12s;
+}
+[data-tooltip][data-tooltip-pos="start"]::after { left: 0; transform: none; }
+[data-tooltip][data-tooltip-pos="end"]::after   { left: auto; right: 0; transform: none; }
+[data-tooltip]:hover::after { opacity: 1; }
+
 /* Domain pill */
 .domain-pill {
   display: flex; align-items: center; gap: 6px;
@@ -571,6 +587,21 @@ details.jtree[open] > summary::before { transform: rotate(90deg); }
 .bulk-btn:disabled { opacity: .4; cursor: not-allowed; }
 .bulk-btn-trash { margin-left: auto; }
 .bulk-btn-trash:hover:not(:disabled) { background: #FEE2E2; color: #B91C1C; border-color: #FCA5A5; }
+
+/* ── Mocks stats bar ─────────────────────────────────────────────────────── */
+.mocks-stats-bar {
+  display: flex; align-items: center; gap: 6px;
+  padding: 5px 12px; background: #F8FAFC;
+  border-bottom: 1px solid #E2E8F0; flex-shrink: 0;
+}
+.mocks-stat {
+  display: inline-flex; align-items: center;
+  height: 20px; padding: 0 8px; border-radius: 10px;
+  font-size: 11px; font-weight: 500; line-height: 1;
+}
+.mocks-stat--total    { background: #F1F5F9; color: #64748B; }
+.mocks-stat--active   { background: #DCFCE7; color: #15803D; }
+.mocks-stat--disabled { background: #F1F5F9; color: #94A3B8; }
 
 /* ── Mock list ───────────────────────────────────────────────────────────── */
 .mock-list { padding: 10px 12px; overflow-y: auto; flex: 1; }
