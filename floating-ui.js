@@ -38,7 +38,9 @@
     #badge {
       background: #3B82F6; color: #fff;
       font-size: 10px; font-weight: 600;
-      padding: 1px 6px; border-radius: 8px; min-width: 18px; text-align: center;
+      width: 20px; height: 20px; border-radius: 50%;
+      display: inline-flex; align-items: center; justify-content: center;
+      flex-shrink: 0;
     }
 
     /* ── Panel ────────────────────────────────────────────────────────────── */
@@ -65,8 +67,10 @@
     .p-head-label { font-size: 13px; color: #E2E8F0; flex: 1; }
     .p-badge {
       background: #3B82F6; color: #fff;
-      font-size: 10px; padding: 1px 6px; border-radius: 8px; min-width: 18px;
-      text-align: center;
+      font-size: 10px; font-weight: 600;
+      width: 20px; height: 20px; border-radius: 50%;
+      display: inline-flex; align-items: center; justify-content: center;
+      flex-shrink: 0;
     }
     .pause-btn {
       width: 28px; height: 20px; border-radius: 5px;
@@ -156,11 +160,11 @@
       <span class="p-head-dot"></span>
       <span class="p-head-label">API Mocker</span>
       <span class="p-badge" id="panelBadge">0</span>
-      <button class="pause-btn" id="pauseBtn">⏸</button>
+      <button class="pause-btn" id="closeBtn">✕</button>
     </div>
     <div class="p-stats" id="statsRow"></div>
     <div class="p-section">
-      <span class="p-section-label">Recent Activity</span>
+      <span class="p-section-label">Recent Intercepted Calls</span>
       <span class="p-section-spacer"></span>
       <span class="live-dot"></span>
       <span class="live-label"> live</span>
@@ -181,7 +185,7 @@
   const panelBadge = shadow.getElementById('panelBadge');
   const callRowsEl = shadow.getElementById('callRows');
   const statsRow   = shadow.getElementById('statsRow');
-  const pauseBtn   = shadow.getElementById('pauseBtn');
+  const closeBtn   = shadow.getElementById('closeBtn');
 
   // ── Mount / unmount ───────────────────────────────────────────────────────
   function mount() {
@@ -206,16 +210,10 @@
     panel.classList.toggle('open', panelOpen);
   });
 
-  pauseBtn.addEventListener('click', async (e) => {
+  closeBtn.addEventListener('click', (e) => {
     e.stopPropagation();
-    const bridge = window.__apiMockerBridge;
-    if (!bridge) return;
-    const currentMocks = bridge.getMocks();
-    allEnabled = !allEnabled;
-    for (const key of Object.keys(currentMocks)) {
-      await bridge.toggleMock(key, allEnabled);
-    }
-    pauseBtn.textContent = allEnabled ? '⏸' : '▶';
+    panelOpen = false;
+    panel.classList.remove('open');
   });
 
   // ── Domain status ─────────────────────────────────────────────────────────
@@ -230,9 +228,9 @@
     if (!isIntercepted) return; // skip PASS calls entirely
 
     interceptedCount++;
-    if (c.blocked)          blockedCount++;
-    else if (c.throttled)   slowCount++;
-    else if (c.mocked)      mockedCount++;
+    if (c.blocked)   blockedCount++;
+    if (c.throttled && !c.blocked) slowCount++;
+    if (c.mocked)    mockedCount++;
 
     badgeEl.textContent    = interceptedCount;
     panelBadge.textContent = interceptedCount;
@@ -250,7 +248,6 @@
     allEnabled = Object.values(m).some(v =>
       ['response', 'throttle', 'block'].some(s => v[s] && v[s].enabled)
     );
-    pauseBtn.textContent = allEnabled ? '⏸' : '▶';
   });
 
   // ── Render ────────────────────────────────────────────────────────────────
@@ -264,17 +261,12 @@
       : '<span class="p-stats-empty">No intercepted calls yet</span>';
   }
 
-  function callType(c) {
-    if (c.blocked)        return 'block';
-    if (c.throttled)      return 'slow';
-    if (c.mocked)         return 'mock';
-    return 'mock';
-  }
-
-  function callTypeLabel(c) {
-    if (c.blocked)   return 'BLKD';
-    if (c.throttled) return 'SLOW';
-    return 'MOCK';
+  function typeBadgesHtml(c) {
+    if (c.blocked) return `<span class="type-badge type-badge--block">BLKD</span>`;
+    const badges = [];
+    if (c.mocked)    badges.push(`<span class="type-badge type-badge--mock">MOCK</span>`);
+    if (c.throttled) badges.push(`<span class="type-badge type-badge--slow">SLOW</span>`);
+    return badges.join('') || `<span class="type-badge type-badge--mock">MOCK</span>`;
   }
 
   function formatDur(c) {
@@ -295,8 +287,6 @@
       return;
     }
     callRowsEl.innerHTML = recentCalls.map(c => {
-      const type    = callType(c);
-      const typeLabel = callTypeLabel(c);
       const method  = (c.method || 'GET').toUpperCase();
       const statusHtml = c.blocked
         ? '<span class="cr-status cr-status--none">—</span>'
@@ -305,7 +295,7 @@
           : `<span class="cr-status">${c.status || '—'}</span>`;
       return `
         <div class="call-row">
-          <span class="type-badge type-badge--${type}">${typeLabel}</span>
+          ${typeBadgesHtml(c)}
           <span class="cr-method cr-method--${methodClass(method)}">${method}</span>
           <span class="cr-url" title="${esc(c.url)}">${shortPath(c.url)}</span>
           ${statusHtml}
