@@ -76,15 +76,23 @@ const disabledOverlay = document.getElementById('disabledOverlay');
 const overlayDomain   = document.getElementById('overlayDomain');
 const overlayEnableBtn = document.getElementById('overlayEnableBtn');
 
+let domainIsEnabled = true;
+let activeTopTab = 'calls';
+
+// The disabled overlay only applies to the Inspector (calls) view — the Mocks,
+// cURL Runner, and Settings tabs are standalone and must stay usable on a
+// disabled domain.
+function updateDisabledOverlay() {
+  const blocked = !domainIsEnabled && activeTopTab === 'calls';
+  disabledOverlay.classList.toggle('hidden', !blocked);
+}
+
 function setDomainEnabled(domain, enabled) {
   currentPanelDomain = domain;
   overlayDomain.textContent = domain;
   if (domainPillText) domainPillText.textContent = domain || '—';
-  if (enabled) {
-    disabledOverlay.classList.add('hidden');
-  } else {
-    disabledOverlay.classList.remove('hidden');
-  }
+  domainIsEnabled = enabled;
+  updateDisabledOverlay();
 }
 
 overlayEnableBtn.addEventListener('click', () => {
@@ -928,6 +936,9 @@ document.querySelectorAll('.tab').forEach(btn => {
     document.querySelectorAll('.view').forEach(v => v.classList.add('hidden'));
     btn.classList.add('active');
     document.getElementById(viewId).classList.remove('hidden');
+    activeTopTab = btn.dataset.tab;
+    updateDisabledOverlay();
+    if (activeTopTab === 'curl' && window.__curlRunner) window.__curlRunner.onShow();
   });
 });
 

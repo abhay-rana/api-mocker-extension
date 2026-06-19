@@ -36,6 +36,18 @@ Two content script worlds must stay separate:
 | `panel.html/css/js` | DevTools panel UI |
 | `floating-ui.js` | In-page Shadow DOM widget |
 | `devtools.html/js` | DevTools entry point — registers the panel tab |
+| `curl-runner.js/css` | cURL Runner tab — standalone Postman-lite request runner (loaded by `panel.html`) |
+
+## cURL Runner (separate subsystem)
+
+A standalone request runner in its own panel tab (`data-tab="curl"` → `#curlView`). **Shares nothing with the mocking half** — paste a curl, edit it in a Postman-style builder, Send, view the response. See `prd/curl-runner.md` for the full spec/tests.
+
+- **Send path** — `curl-runner.js` posts `RUN_REQUEST` to `background.js`, which `fetch()`es from the **service worker** (`runRequest()`, 30s `AbortController` timeout, `redirect: 'follow'`, `credentials: 'omit'`). This **bypasses page CORS** (via `host_permissions`) and does **not** use the page's cookies/session. It is **never** intercepted by `inject-main` (which only patches the page's `window.fetch`), so the runner always hits the real network regardless of the mock toggle.
+- **Builder is source of truth** after Parse & Preview; the pinned curl is a read-only snapshot, and **Edit** re-parses a fresh paste. Auth tab writes into the headers set (`_auth`-flagged header) so headers stay the single source of truth.
+- **Parser** (`parseCurl`) is "Practical" tier — handles Chrome "Copy as cURL" (`--data-raw`, `\` continuations, `$'…'`/quote styles, `-u`→Basic, `-b`, `-G`); detects `-F`/`@file` and surfaces an "unsupported" warning (panel has no filesystem).
+- **`{{var}}`** resolved in URL/headers/body at Send; an undefined variable **blocks the send** with a named error. One global var set in `chrome.storage.local` (`curl-vars`). Recent requests = last 5 full requests (`curl-recent`), response not stored; clicking one **loads into the builder without auto-sending**.
+- **Reuses `esc()` from `panel.js`** (global scope, loaded first). Response body uses its own `buildRespTree` whose leaves carry `data-val` for click-to-save-as-variable; "Capture token" deep-scans common token fields → `{{token}}`.
+- **The disabled-domain overlay is gated to the Inspector tab only** (`updateDisabledOverlay()` in `panel.js`) — Mocks, cURL Runner, and Settings stay usable on a disabled domain. Don't revert this to the old unconditional toggle.
 
 ## Key Constraints & Gotchas
 

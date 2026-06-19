@@ -348,9 +348,74 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       sendResponse({ ok: true });
       return;
     }
+
+    // cURL Runner — send a request from the service worker (bypasses page CORS,
+    // uses the extension context, NOT the page's cookies/session). Never goes
+    // through inject-main, so it always hits the real network regardless of mocks.
+    if (msg.type === 'RUN_REQUEST') {
+      const res = await runRequest(msg.payload || {});
+      sendResponse(res);
+      return;
+    }
   })();
   return true;
 });
+
+// ── cURL Runner request execution ─────────────────────────────────────────────
+
+const RUN_TIMEOUT_MS = 30_000;
+
+async function runRequest({ method, url, headers, body }) {
+  const m = (method || 'GET').toUpperCase();
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), RUN_TIMEOUT_MS);
+  const start = Date.now();
+  try {
+    if (!url || !/^https?:\/\//i.test(url)) {
+      throw new TypeError('Invalid URL — must start with http:// or https://');
+    }
+    const init = {
+      method: m,
+      headers: headers || {},
+      signal: controller.signal,
+      redirect: 'follow',
+      credentials: 'omit',
+    };
+    if (body != null && body !== '' && m !== 'GET' && m !== 'HEAD') {
+      init.body = body;
+    }
+    const resp = await fetch(url, init);
+    const text = await resp.text();
+    const elapsedMs = Date.now() - start;
+    const respHeaders = {};
+    for (const [k, v] of resp.headers.entries()) respHeaders[k] = v;
+    let size;
+    try { size = new Blob([text]).size; } catch { size = text.length; }
+    return {
+      ok: true,
+      status: resp.status,
+      statusText: resp.statusText,
+      headers: respHeaders,
+      body: text,
+      elapsedMs,
+      size,
+      finalUrl: resp.url,
+      redirected: resp.redirected,
+    };
+  } catch (err) {
+    const elapsedMs = Date.now() - start;
+    const aborted = err && err.name === 'AbortError';
+    return {
+      ok: false,
+      error: aborted
+        ? `Request timed out after ${RUN_TIMEOUT_MS / 1000}s`
+        : (err && err.message ? err.message : 'Failed to fetch — network error or invalid URL'),
+      elapsedMs,
+    };
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 // ── Content script injection ─────────────────────────────────────────────────
 
