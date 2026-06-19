@@ -9,42 +9,68 @@
   const RESP_TREE_LIMIT = 80_000;
   const RECENT_KEY = 'curl-recent';
   const VARS_KEY = 'curl-vars';
+  const TABS_KEY = 'curl-tabs';
+  const ACTIVE_KEY = 'curl-active';
   const MAX_RECENT = 5;
 
   const root = document.getElementById('curlRunner');
   if (!root) return;
 
   // ── State ──────────────────────────────────────────────────────────────────
-  const state = {
-    mode: 'empty',                 // 'empty' | 'builder'
-    rawCurl: '',
-    method: 'GET',
-    url: '',
-    headers: [],                   // { name, value, enabled, _auth? }
-    bodyType: 'none',              // 'none' | 'json' | 'form' | 'raw'
-    body: '',
-    form: [],                      // { name, value, enabled } (x-www-form-urlencoded)
-    params: [],                    // { name, value, enabled } (synced to URL query)
-    auth: { type: 'none', token: '', user: '', pass: '', keyName: 'X-API-Key', keyValue: '' },
-    activeTab: 'body',             // 'body' | 'headers' | 'params' | 'auth'
-    respView: 'pretty',            // 'pretty' | 'raw'
-    respTab: 'body',               // 'body' | 'headers'
-    response: null,                // last response object
-    sending: false,
-    parseWarnings: [],
-  };
+  // Each open request is an independent "session". `state` always points at the
+  // active session; switching tabs reassigns it (all helpers read `state`).
+  function makeSession() {
+    return {
+      mode: 'empty',                 // 'empty' | 'builder'
+      draft: '',                     // paste-textarea text while in empty mode
+      rawCurl: '',
+      method: 'GET',
+      url: '',
+      headers: [],                   // { name, value, enabled, _auth? }
+      bodyType: 'none',              // 'none' | 'json' | 'form' | 'raw'
+      body: '',
+      form: [],                      // { name, value, enabled } (x-www-form-urlencoded)
+      params: [],                    // { name, value, enabled } (synced to URL query)
+      auth: { type: 'none', token: '', user: '', pass: '', keyName: 'X-API-Key', keyValue: '' },
+      activeTab: 'body',             // 'body' | 'headers' | 'params' | 'auth'
+      respView: 'pretty',            // 'pretty' | 'raw'
+      respTab: 'body',               // 'body' | 'headers'
+      response: null,                // last response object (not persisted)
+      sending: false,
+      parseWarnings: [],
+    };
+  }
+  let sessions = [makeSession()];
+  let activeIdx = 0;
+  let state = sessions[0];
   let vars = {};
   let recent = [];
   let built = false;
 
   // ── Persistence ─────────────────────────────────────────────────────────────
   function loadStored() {
-    chrome.storage.local.get([RECENT_KEY, VARS_KEY], (r) => {
+    chrome.storage.local.get([RECENT_KEY, VARS_KEY, TABS_KEY, ACTIVE_KEY], (r) => {
       recent = Array.isArray(r[RECENT_KEY]) ? r[RECENT_KEY] : [];
       vars = (r[VARS_KEY] && typeof r[VARS_KEY] === 'object') ? r[VARS_KEY] : {};
-      if (built && state.mode === 'empty') renderRecent();
+      const saved = Array.isArray(r[TABS_KEY]) ? r[TABS_KEY] : null;
+      if (saved && saved.length) {
+        sessions = saved.map((t) => Object.assign(makeSession(), t, { response: null, sending: false, parseWarnings: [] }));
+        activeIdx = Math.min(Math.max(0, r[ACTIVE_KEY] || 0), sessions.length - 1);
+        state = sessions[activeIdx];
+      }
+      if (built) renderActiveSession();
       updateVarsButton();
     });
+  }
+  let persistTimer = null;
+  function persistTabsSoon() { clearTimeout(persistTimer); persistTimer = setTimeout(persistTabs, 400); }
+  function persistTabs() {
+    const slim = sessions.map((s) => ({
+      mode: s.mode, draft: s.draft, rawCurl: s.rawCurl, method: s.method, url: s.url,
+      headers: s.headers, bodyType: s.bodyType, body: s.body, form: s.form, params: s.params,
+      auth: s.auth, activeTab: s.activeTab,
+    }));
+    chrome.storage.local.set({ [TABS_KEY]: slim, [ACTIVE_KEY]: activeIdx });
   }
   function saveRecent() { chrome.storage.local.set({ [RECENT_KEY]: recent }); }
   function saveVars() { chrome.storage.local.set({ [VARS_KEY]: vars }); updateVarsButton(); }
@@ -253,6 +279,11 @@
         </div>
       </div>
 
+      <!-- REQUEST TABS BAR (one tab per open curl) -->
+      <div class="cr-tabbar" id="crTabBar"></div>
+
+      <div class="cr-scroll" id="crScroll">
+
       <!-- EMPTY STATE -->
       <div class="cr-empty" id="crEmpty">
         <div class="cr-empty-head">
@@ -358,6 +389,8 @@
         <!-- RESPONSE -->
         <div class="cr-response" id="crResponse"></div>
       </div>
+
+      </div><!-- /cr-scroll -->
     `;
     wireSkeleton();
     built = true;
@@ -376,12 +409,15 @@
     $('#crVarsAdd').addEventListener('click', () => { addVarRow('', ''); });
     $('#crVarsOverlay').addEventListener('click', (e) => { if (e.target.id === 'crVarsOverlay') closeVars(); });
 
-    $('#crMethod').addEventListener('change', (e) => { state.method = e.target.value; });
-    $('#crUrl').addEventListener('input', (e) => { state.url = e.target.value; });
-    $('#crUrl').addEventListener('blur', () => { if (state.activeTab === 'params') { state.params = getParams(); renderParams(); } });
+    $('#crMethod').addEventListener('change', (e) => { state.method = e.target.value; renderTabBar(); persistTabs(); });
+    $('#crUrl').addEventListener('input', (e) => { state.url = e.target.value; persistTabsSoon(); });
+    $('#crUrl').addEventListener('blur', () => {
+      if (state.activeTab === 'params') { state.params = getParams(); renderParams(); }
+      renderTabBar(); persistTabs();
+    });
 
     $('#crSendBtn').addEventListener('click', send);
-    $('#crBody').addEventListener('input', (e) => { state.body = e.target.value; });
+    $('#crBody').addEventListener('input', (e) => { state.body = e.target.value; persistTabsSoon(); });
     $('#crFormatBtn').addEventListener('click', formatJson);
 
     // builder tabs
@@ -392,7 +428,7 @@
     // body type
     $('#crBodyType').addEventListener('click', (e) => {
       const b = e.target.closest('.cr-chip'); if (!b) return;
-      setBodyType(b.dataset.bt);
+      setBodyType(b.dataset.bt, true);
     });
 
     // add buttons
@@ -401,16 +437,16 @@
     $('#crFormAdd').addEventListener('click', () => { state.form.push({ name: '', value: '', enabled: true }); renderForm(); focusLastRow('#crFormList'); });
 
     // kv list delegation
-    wireKvList('#crHdrList', () => state.headers, renderHeaders, () => { updateHdrCount(); });
-    wireKvList('#crParamList', () => state.params, renderParams, syncUrlFromParams);
-    wireKvList('#crFormList', () => state.form, renderForm);
+    wireKvList('#crHdrList', () => state.headers, renderHeaders, () => { updateHdrCount(); persistTabsSoon(); });
+    wireKvList('#crParamList', () => state.params, renderParams, () => { syncUrlFromParams(); persistTabsSoon(); });
+    wireKvList('#crFormList', () => state.form, renderForm, persistTabsSoon);
 
     // auth
-    $('#crAuthType').addEventListener('change', (e) => { state.auth.type = e.target.value; renderAuthFields(); applyAuthToHeaders(); updateHdrCount(); if (state.activeTab === 'headers') renderHeaders(); });
+    $('#crAuthType').addEventListener('change', (e) => { state.auth.type = e.target.value; renderAuthFields(); applyAuthToHeaders(); updateHdrCount(); if (state.activeTab === 'headers') renderHeaders(); persistTabsSoon(); });
     $('#crAuthFields').addEventListener('input', (e) => {
       const f = e.target.dataset.authField; if (!f) return;
       state.auth[f] = e.target.value;
-      applyAuthToHeaders(); updateHdrCount();
+      applyAuthToHeaders(); updateHdrCount(); persistTabsSoon();
     });
 
     // copy menu
@@ -425,6 +461,15 @@
     $('#crRecent').addEventListener('click', (e) => {
       const row = e.target.closest('.cr-recent-row'); if (!row) return;
       loadRecent(parseInt(row.dataset.idx, 10));
+    });
+
+    // request-tab bar delegation (add / close / select)
+    $('#crTabBar').addEventListener('click', (e) => {
+      if (e.target.closest('#crTabAdd')) { newTab(); return; }
+      const close = e.target.closest('.cr-rtabb-close');
+      if (close) { e.stopPropagation(); closeTab(parseInt(close.dataset.close, 10)); return; }
+      const tab = e.target.closest('.cr-rtabb');
+      if (tab) selectTab(parseInt(tab.dataset.i, 10));
     });
 
     // response delegation (capture token / save-as-var / tabs / pretty-raw)
@@ -514,8 +559,9 @@
     if (tab === 'auth') renderAuthFields();
   }
 
-  function setBodyType(bt) {
+  function setBodyType(bt, persist) {
     state.bodyType = bt;
+    if (persist) persistTabsSoon();
     root.querySelectorAll('#crBodyType .cr-chip').forEach((c) => c.classList.toggle('cr-chip--active', c.dataset.bt === bt));
     const ta = root.querySelector('#crBody');
     const formList = root.querySelector('#crFormList');
@@ -550,8 +596,10 @@
     state.auth = { type: 'none', token: '', user: '', pass: '', keyName: 'X-API-Key', keyValue: '' };
     state.parseWarnings = parsed.warnings;
     state.response = null;
+    state.draft = '';
     populateBuilder();
     switchMode('builder');
+    persistTabs();
   }
 
   function populateBuilder() {
@@ -582,6 +630,65 @@
     root.querySelector('#crEmpty').classList.toggle('cr-hidden', mode !== 'empty');
     root.querySelector('#crBuilder').classList.toggle('cr-hidden', mode !== 'builder');
     if (mode === 'empty') renderRecent();
+    renderTabBar();
+  }
+
+  // ── Multi-tab (request sessions) ──────────────────────────────────────────
+  function sessionPath(s) {
+    if (!s.url) return '';
+    try { const u = new URL(s.url); return u.pathname + (u.search || ''); } catch { return s.url; }
+  }
+  function renderTabBar() {
+    const bar = root.querySelector('#crTabBar'); if (!bar) return;
+    const tabs = sessions.map((s, i) => {
+      const active = i === activeIdx;
+      const empty = s.mode === 'empty';
+      const label = empty ? 'New Request' : (sessionPath(s) || s.url || 'Untitled');
+      const badge = empty
+        ? '<span class="cr-rtabb-newdot"></span>'
+        : `<span class="cr-rtabb-badge cr-mb--${active ? statusMethodClass(s.method) : 'dim'}">${esc(s.method)}</span>`;
+      return `<div class="cr-rtabb${active ? ' cr-rtabb--active' : ''}" data-i="${i}" title="${esc(empty ? 'New Request' : s.method + ' ' + s.url)}">
+        ${badge}
+        <span class="cr-rtabb-path${active ? '' : ' cr-rtabb-path--dim'}">${esc(label)}</span>
+        <button class="cr-rtabb-close" data-close="${i}" title="Close tab">×</button>
+      </div>`;
+    }).join('');
+    bar.innerHTML = `<div class="cr-rtabb-scroll">${tabs}<button class="cr-rtabb-add" id="crTabAdd" title="New request">+</button></div>`;
+  }
+  // Persist the active tab's paste-box text so it survives a tab switch.
+  function captureDraft() {
+    if (state.mode === 'empty') { const el = root.querySelector('#crCurlInput'); if (el) state.draft = el.value; }
+  }
+  function renderActiveSession() {
+    state = sessions[activeIdx];
+    if (state.mode === 'builder') { populateBuilder(); switchMode('builder'); }
+    else {
+      const el = root.querySelector('#crCurlInput'); if (el) el.value = state.draft || '';
+      switchMode('empty');
+    }
+  }
+  function newTab() {
+    captureDraft();
+    sessions.push(makeSession());
+    activeIdx = sessions.length - 1;
+    renderActiveSession();
+    const el = root.querySelector('#crCurlInput'); if (el) el.focus();
+    persistTabs();
+  }
+  function closeTab(i) {
+    sessions.splice(i, 1);
+    if (!sessions.length) sessions.push(makeSession());
+    if (i < activeIdx) activeIdx--;
+    if (activeIdx >= sessions.length) activeIdx = sessions.length - 1;
+    renderActiveSession();
+    persistTabs();
+  }
+  function selectTab(i) {
+    if (i === activeIdx) return;
+    captureDraft();
+    activeIdx = i;
+    renderActiveSession();
+    persistTabs();
   }
 
   // ── Send ────────────────────────────────────────────────────────────────
@@ -645,6 +752,8 @@
       bodyType: state.bodyType, body: state.body, form: state.form,
       rawCurl: state.rawCurl, auth: state.auth,
     });
+    renderTabBar();   // method/path may have changed since parse
+    persistTabs();
   }
 
   // ── Response rendering ──────────────────────────────────────────────────
@@ -880,8 +989,10 @@
     state.rawCurl = r.rawCurl || genCurl();
     state.parseWarnings = [];
     state.response = null;            // T15: load only — no auto-send
+    state.draft = '';
     populateBuilder();
     switchMode('builder');
+    persistTabs();
   }
 
   // ── small utils ───────────────────────────────────────────────────────────
@@ -909,7 +1020,7 @@
   // ── public hook ─────────────────────────────────────────────────────────
   window.__curlRunner = {
     onShow() {
-      if (!built) { buildSkeleton(); switchMode('empty'); renderResponse(); }
+      if (!built) { buildSkeleton(); renderActiveSession(); }
       loadStored();
     },
   };

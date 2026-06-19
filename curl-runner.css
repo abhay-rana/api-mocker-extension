@@ -1,10 +1,12 @@
 /* cURL Runner — styles. Matches panel.css (Inter, blue #3B82F6 accents, light). */
 
 .curl-runner {
-  flex: 1; min-height: 0; overflow: auto;
+  flex: 1; min-height: 0; overflow: hidden;
   background: #FFFFFF; color: #0F172A;
   font-size: 12px;
+  display: flex; flex-direction: column;
 }
+.cr-scroll { flex: 1; min-height: 0; overflow: auto; }
 .cr-hidden { display: none !important; }
 .cr-flex { flex: 1; }
 .curl-runner code { font-family: 'Roboto Mono', ui-monospace, monospace; }
@@ -36,6 +38,46 @@
   min-width: 15px; height: 14px; padding: 0 4px; margin-left: 2px;
   border-radius: 7px; background: #E2E8F0; color: #475569; font-size: 9px; font-weight: 600;
 }
+
+/* ── Request tabs bar (one tab per open curl) ─────────────────────────────── */
+.cr-tabbar { background: #F1F5F9; border-bottom: 1px solid #E2E8F0; overflow: hidden; flex: none; }
+.cr-rtabb-scroll { display: flex; align-items: stretch; height: 34px; overflow-x: auto; overflow-y: hidden; }
+.cr-rtabb-scroll::-webkit-scrollbar { height: 0; }
+.cr-rtabb {
+  display: flex; align-items: center; gap: 6px; height: 34px; padding: 0 10px 0 12px;
+  border-right: 1px solid #E2E8F0; background: transparent; cursor: pointer; position: relative;
+  flex: 0 0 auto; max-width: 230px; min-width: 120px; box-sizing: border-box;
+}
+.cr-rtabb:hover { background: #E8EDF4; }
+.cr-rtabb--active { background: #FFFFFF; }
+.cr-rtabb--active::after { content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 2px; background: #3B82F6; }
+.cr-rtabb-badge {
+  font-family: 'Roboto Mono', monospace; font-size: 10px; font-weight: 700; letter-spacing: .3px;
+  padding: 1px 5px; border-radius: 3px; flex: none;
+}
+.cr-mb--get { background: #16A34A18; color: #16A34A; }
+.cr-mb--post { background: #B4530918; color: #B45309; }
+.cr-mb--put { background: #1D4ED818; color: #1D4ED8; }
+.cr-mb--del { background: #B91C1C18; color: #B91C1C; }
+.cr-mb--other { background: #47556918; color: #475569; }
+.cr-mb--dim { background: #E5E7EB; color: #9CA3AF; }
+.cr-rtabb-newdot { width: 7px; height: 7px; border-radius: 50%; background: #CBD5E1; flex: none; }
+.cr-rtabb-path {
+  flex: 1; min-width: 0; font-size: 12px; color: #1E293B;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.cr-rtabb-path--dim { color: #9CA3AF; }
+.cr-rtabb-close {
+  border: none; background: transparent; color: #94A3B8; cursor: pointer;
+  font-size: 15px; line-height: 1; width: 16px; height: 16px; border-radius: 3px; flex: none;
+  display: flex; align-items: center; justify-content: center;
+}
+.cr-rtabb-close:hover { background: #E2E8F0; color: #475569; }
+.cr-rtabb-add {
+  border: none; background: transparent; color: #94A3B8; cursor: pointer;
+  font-size: 16px; width: 32px; flex: none; display: flex; align-items: center; justify-content: center;
+}
+.cr-rtabb-add:hover { background: #E8EDF4; color: #475569; }
 
 /* ── Empty state ─────────────────────────────────────────────────────────── */
 .cr-empty { padding: 22px 24px; max-width: 1000px; }
